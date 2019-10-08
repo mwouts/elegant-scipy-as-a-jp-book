@@ -1,0 +1,23 @@
+- title: Elegant Scipy
+  url: acknowledgements  
+- title: Preface
+  url: preface
+- title: "Elegant NumPy: The Foundation of Scientific Python"
+  url: ch1
+- title: Quantile Normalization with NumPy and SciPy
+  url: ch2
+- title: Networks of Image Regions with ndimage
+  url: ch3
+- title: Frequency and the fast Fourier transform
+  url: ch4
+- title: Contingency tables using sparse coordinate matrices
+  url: ch5
+- title: Linear algebra in SciPy
+  url: ch6
+- title: Function optimization in SciPy
+  url: ch7
+- title: Big Data in Little Laptop with Toolz
+  url: ch8
+- title: Epilogue
+  url: epilogue
+

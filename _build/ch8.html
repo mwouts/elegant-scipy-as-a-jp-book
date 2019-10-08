@@ -1,0 +1,2319 @@
+---
+title: |-
+  Big Data in Little Laptop with Toolz
+prev_page:
+  url: /ch7.html
+  title: |-
+    Function optimization in SciPy
+next_page:
+  url: /epilogue.html
+  title: |-
+    Epilogue
+suffix: .md
+
+comment: "***PROGRAMMATICALLY GENERATED, DO NOT EDIT. SEE ORIGINAL FILES IN /content***"
+---
+
+    <main class="jupyter-page">
+    <div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<h1 id="Big-Data-in-Little-Laptop-with-Toolz">Big Data in Little Laptop with Toolz<a class="anchor-link" href="#Big-Data-in-Little-Laptop-with-Toolz"> </a></h1><blockquote><p>GRACIE: A knife? The guy's twelve feet tall!<br/>
+JACK: Seven. Hey, don't worry, I think I can handle him.</p>
+<p>— Jack Burton, <em>Big Trouble in Little China</em></p>
+</blockquote>
+<p>Streaming is not a SciPy feature per se, but rather an approach that
+allows us to efficiently process large datasets, like those often
+seen in science. The Python language contains some useful primitives
+for streaming data processing, and these can be combined with Matt Rocklin's
+Toolz library to generate elegant, concise code that is extremely
+memory-efficient. In this chapter, we will show you how to apply these
+streaming concepts to enable you to handle much larger datasets than can fit
+in your computer's RAM.</p>
+<p>You have probably already done some streaming, perhaps without thinking about it in these terms.
+The simplest form is probably iterating through lines in a files, processing each line without ever reading the entire file into memory.
+For example a loop like this to calculate the mean of each row and sum them:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s1">&#39;data/expr.tsv&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+    <span class="n">sum_of_means</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">f</span><span class="p">:</span>
+        <span class="n">sum_of_means</span> <span class="o">+=</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">fromstring</span><span class="p">(</span><span class="n">line</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span> <span class="n">sep</span><span class="o">=</span><span class="s1">&#39;</span><span class="se">\t</span><span class="s1">&#39;</span><span class="p">))</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">sum_of_means</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+<div class="output_subarea output_stream output_stdout output_text">
+<pre>1463.0
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>This strategy works really well for cases where your problem can be neatly solved with by-row processing.
+But things can quickly get out of hand when your code becomes more sophisticated.</p>
+<p>In streaming programs, a function processes <em>some</em> of the input data, returns the
+processed chunk, then, while downstream functions are dealing with that chunk,
+the function receives a bit more, and so on...  All these things are going on
+at the same time!  How can one keep them straight?</p>
+<p>We too found this difficult, until we discovered the <code>toolz</code> library.
+Its constructs make streaming programs so elegant to write that
+it was impossible to contemplate writing this book without including a chapter
+about it.</p>
+<p>Let us clarify what we mean by "streaming" and why you might want to do it.
+Suppose you have some data in a text file, and you want to compute the column-wise average of $\log(x+1)$ of the values.
+The common way to do this would be to use NumPy to load the values, compute the log function for all values in the full matrix, and then take the mean over the 1st axis:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="n">expr</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">loadtxt</span><span class="p">(</span><span class="s1">&#39;data/expr.tsv&#39;</span><span class="p">)</span>
+<span class="n">logexpr</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">expr</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+<span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">logexpr</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_text output_subarea output_execute_result">
+<pre>array([3.11797294, 2.48682887, 2.19580049, 2.36001866, 2.70124539,
+       2.64721531, 2.43704834, 3.28539133, 2.05363724, 2.37151577,
+       3.85450782, 3.9488385 , 2.46680157, 2.36334423, 3.18381635,
+       2.64438124, 2.62966516, 2.84790568, 2.61691451, 4.12513405])</pre>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>This works, and it follows a reassuringly familiar input-output model of computation.
+But it's a pretty inefficient way to go about it!
+We load the full matrix into memory (1), then make a copy with 1 added to each value (2), then make another copy to compute the log (3), before finally passing it on to <code>np.mean</code>.
+That's three instances of the data array, to perform an operation that doesn't require keeping even <em>one</em> instance in memory.
+For any kind of "big data" operation, this approach won't work.</p>
+<p>Python's creators knew this, and created the "yield" keyword, which enables a function to process just one "sip" of the data, pass the result on to the next process, and <em>let the chain of processing complete</em> for that one piece of data before moving on to the next one.
+"Yield" is a rather nice name for it: the function <em>yields</em> control to the next function, waiting to resume processing the data until all the downstream steps have processed that data point.</p>
+<h2 id="Streaming-with-yield">Streaming with <code>yield</code><a class="anchor-link" href="#Streaming-with-yield"> </a></h2><p>The flow of control described above can be rather hard to follow.
+An awesome feature of Python is that it abstracts this complexity away, allowing you to focus on the analysis functionality.
+Here's one way to think about it: for every processing function that would normally take a list (a collection of data) and transform that list, you can rewrite that function as taking a <em>stream</em> and <em>yielding</em> the result of every element of that stream.</p>
+<p>Here's an example where we take the log of each element in a list, using either a standard data-copying method or a streaming method:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="k">def</span> <span class="nf">log_all_standard</span><span class="p">(</span><span class="nb">input</span><span class="p">):</span>
+    <span class="n">output</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">elem</span> <span class="ow">in</span> <span class="nb">input</span><span class="p">:</span>
+        <span class="n">output</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">elem</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">output</span>
+
+<span class="k">def</span> <span class="nf">log_all_streaming</span><span class="p">(</span><span class="n">input_stream</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">elem</span> <span class="ow">in</span> <span class="n">input_stream</span><span class="p">:</span>
+        <span class="k">yield</span> <span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">elem</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Let's check that we get the same result with both methods:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="c1"># We set the random seed so we will get consistent results</span>
+<span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="n">seed</span><span class="o">=</span><span class="mi">7</span><span class="p">)</span>
+
+<span class="n">arr</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="mi">1000</span><span class="p">)</span> <span class="o">+</span> <span class="mf">0.5</span>
+<span class="n">result_batch</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">log_all_standard</span><span class="p">(</span><span class="n">arr</span><span class="p">))</span>
+<span class="nb">print</span><span class="p">(</span><span class="s1">&#39;Batch result: &#39;</span><span class="p">,</span> <span class="n">result_batch</span><span class="p">)</span>
+<span class="n">result_stream</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">log_all_streaming</span><span class="p">(</span><span class="n">arr</span><span class="p">))</span>
+<span class="nb">print</span><span class="p">(</span><span class="s1">&#39;Stream result: &#39;</span><span class="p">,</span> <span class="n">result_stream</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+<div class="output_subarea output_stream output_stdout output_text">
+<pre>Batch result:  -48.2409194560661
+Stream result:  -48.2409194560661
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>The advantage of the streaming approach is that elements of a stream aren't processed until they're needed, whether it's for computing a running sum, or for writing out to disk, or something else.
+This can conserve a lot of memory when you have many input items, or when each item is very big.
+(Or both!)
+This quote from one of Matt's blog posts very succinctly summarizes the utility of streaming data analysis:</p>
+<blockquote><p>In my brief experience people rarely take this [streaming] route.
+They use single-threaded in-memory Python until it breaks, and then seek out Big Data Infrastructure like Hadoop/Spark at relatively high productivity overhead.</p>
+</blockquote>
+<p>Indeed, this describes our computational careers perfectly.
+But the intermediate approach can get you a <em>lot</em> farther than you think.
+In some cases, it can get you there even faster than the supercomputing approach, by eliminating the overhead of multi-core communication and random-access to databases.
+(For example, see <a href="http://www.frankmcsherry.org/graph/scalability/cost/2015/02/04/COST2.html">this post</a> by Frank McSherry, where he processes a 128 billion edge graph on his laptop <em>faster</em> than using a graph database on a supercomputer.)</p>
+<p>To clarify the flow of control when using streaming-style functions, it's useful to make <em>verbose</em> versions of the functions, which print out a message with each operation.</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+
+<span class="k">def</span> <span class="nf">tsv_line_to_array</span><span class="p">(</span><span class="n">line</span><span class="p">):</span>
+    <span class="n">lst</span> <span class="o">=</span> <span class="p">[</span><span class="nb">float</span><span class="p">(</span><span class="n">elem</span><span class="p">)</span> <span class="k">for</span> <span class="n">elem</span> <span class="ow">in</span> <span class="n">line</span><span class="o">.</span><span class="n">rstrip</span><span class="p">()</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;</span><span class="se">\t</span><span class="s1">&#39;</span><span class="p">)]</span>
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">lst</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">readtsv</span><span class="p">(</span><span class="n">filename</span><span class="p">):</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;starting readtsv&#39;</span><span class="p">)</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">filename</span><span class="p">)</span> <span class="k">as</span> <span class="n">fin</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">line</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">fin</span><span class="p">):</span>
+            <span class="nb">print</span><span class="p">(</span><span class="n">f</span><span class="s1">&#39;reading line </span><span class="si">{i}</span><span class="s1">&#39;</span><span class="p">)</span>
+            <span class="k">yield</span> <span class="n">tsv_line_to_array</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;finished readtsv&#39;</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">add1</span><span class="p">(</span><span class="n">arrays_iter</span><span class="p">):</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;starting adding 1&#39;</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">arr</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">arrays_iter</span><span class="p">):</span>
+        <span class="nb">print</span><span class="p">(</span><span class="n">f</span><span class="s1">&#39;adding 1 to line </span><span class="si">{i}</span><span class="s1">&#39;</span><span class="p">)</span>
+        <span class="k">yield</span> <span class="n">arr</span> <span class="o">+</span> <span class="mi">1</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;finished adding 1&#39;</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">log</span><span class="p">(</span><span class="n">arrays_iter</span><span class="p">):</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;starting log&#39;</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">arr</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">arrays_iter</span><span class="p">):</span>
+        <span class="nb">print</span><span class="p">(</span><span class="n">f</span><span class="s1">&#39;taking log of array </span><span class="si">{i}</span><span class="s1">&#39;</span><span class="p">)</span>
+        <span class="k">yield</span> <span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">arr</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;finished log&#39;</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">running_mean</span><span class="p">(</span><span class="n">arrays_iter</span><span class="p">):</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;starting running mean&#39;</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">arr</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">arrays_iter</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">i</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">mean</span> <span class="o">=</span> <span class="n">arr</span>
+        <span class="n">mean</span> <span class="o">+=</span> <span class="p">(</span><span class="n">arr</span> <span class="o">-</span> <span class="n">mean</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="n">f</span><span class="s1">&#39;adding line </span><span class="si">{i}</span><span class="s1"> to the running mean&#39;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;returning mean&#39;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">mean</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Let's see it in action for a small sample file:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">fin</span> <span class="o">=</span> <span class="s1">&#39;data/expr.tsv&#39;</span>
+<span class="nb">print</span><span class="p">(</span><span class="s1">&#39;Creating lines iterator&#39;</span><span class="p">)</span>
+<span class="n">lines</span> <span class="o">=</span> <span class="n">readtsv</span><span class="p">(</span><span class="n">fin</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s1">&#39;Creating loglines iterator&#39;</span><span class="p">)</span>
+<span class="n">loglines</span> <span class="o">=</span> <span class="n">log</span><span class="p">(</span><span class="n">add1</span><span class="p">(</span><span class="n">lines</span><span class="p">))</span>
+<span class="nb">print</span><span class="p">(</span><span class="s1">&#39;Computing mean&#39;</span><span class="p">)</span>
+<span class="n">mean</span> <span class="o">=</span> <span class="n">running_mean</span><span class="p">(</span><span class="n">loglines</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">f</span><span class="s1">&#39;the mean log-row is: </span><span class="si">{mean}</span><span class="s1">&#39;</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+<div class="output_subarea output_stream output_stdout output_text">
+<pre>Creating lines iterator
+Creating loglines iterator
+Computing mean
+starting running mean
+starting log
+starting adding 1
+starting readtsv
+reading line 0
+adding 1 to line 0
+taking log of array 0
+adding line 0 to the running mean
+reading line 1
+adding 1 to line 1
+taking log of array 1
+adding line 1 to the running mean
+reading line 2
+adding 1 to line 2
+taking log of array 2
+adding line 2 to the running mean
+reading line 3
+adding 1 to line 3
+taking log of array 3
+adding line 3 to the running mean
+reading line 4
+adding 1 to line 4
+taking log of array 4
+adding line 4 to the running mean
+finished readtsv
+finished adding 1
+finished log
+returning mean
+the mean log-row is: [3.11797294 2.48682887 2.19580049 2.36001866 2.70124539 2.64721531
+ 2.43704834 3.28539133 2.05363724 2.37151577 3.85450782 3.9488385
+ 2.46680157 2.36334423 3.18381635 2.64438124 2.62966516 2.84790568
+ 2.61691451 4.12513405]
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Note:</p>
+<ul>
+<li>None of the computation is run when creating the lines and loglines iterators. This is because iterators are <em>lazy</em>, meaning they are not evaluated (or <em>consumed</em>) until a result is needed.</li>
+<li>When the computation is finally triggered, by the call to <code>running_mean</code>, it jumps back and forth between all the functions, as various computations are performed on each line, before moving on to the next line.</li>
+</ul>
+<h2 id="Introducing-the-Toolz-streaming-library">Introducing the Toolz streaming library<a class="anchor-link" href="#Introducing-the-Toolz-streaming-library"> </a></h2><p>In this chapter's code example, contributed by Matt Rocklin, we create a Markov model from an entire fly genome in under 5 minutes on a laptop, using just a few lines of code.
+(We have slightly edited it for easier downstream processing.)
+Matt's example uses a human genome, but apparently our laptops weren't quite so fast, so we're going to use a fly genome instead (it's about 1/20 the size).
+Over the course of the chapter we'll actually augment it a little bit to start from compressed data (who wants to keep an uncompressed dataset on their hard drive?).
+This modification is almost <em>trivial</em>, which speaks to the elegance of his example.</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">import</span> <span class="nn">toolz</span> <span class="k">as</span> <span class="nn">tz</span>
+<span class="kn">from</span> <span class="nn">toolz</span> <span class="k">import</span> <span class="n">curried</span> <span class="k">as</span> <span class="n">c</span>
+<span class="kn">from</span> <span class="nn">glob</span> <span class="k">import</span> <span class="n">glob</span>
+<span class="kn">import</span> <span class="nn">itertools</span> <span class="k">as</span> <span class="nn">it</span>
+
+<span class="n">LDICT</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="s1">&#39;ACGTacgt&#39;</span><span class="p">,</span> <span class="nb">range</span><span class="p">(</span><span class="mi">8</span><span class="p">)))</span>
+<span class="n">PDICT</span> <span class="o">=</span> <span class="p">{(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">):</span> <span class="p">(</span><span class="n">LDICT</span><span class="p">[</span><span class="n">a</span><span class="p">],</span> <span class="n">LDICT</span><span class="p">[</span><span class="n">b</span><span class="p">])</span>
+         <span class="k">for</span> <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="ow">in</span> <span class="n">it</span><span class="o">.</span><span class="n">product</span><span class="p">(</span><span class="n">LDICT</span><span class="p">,</span> <span class="n">LDICT</span><span class="p">)}</span>
+
+<span class="k">def</span> <span class="nf">is_sequence</span><span class="p">(</span><span class="n">line</span><span class="p">):</span>
+    <span class="k">return</span> <span class="ow">not</span> <span class="n">line</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;&gt;&#39;</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">is_nucleotide</span><span class="p">(</span><span class="n">letter</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">letter</span> <span class="ow">in</span> <span class="n">LDICT</span>  <span class="c1"># ignore &#39;N&#39;</span>
+
+<span class="nd">@tz</span><span class="o">.</span><span class="n">curry</span>
+<span class="k">def</span> <span class="nf">increment_model</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">index</span><span class="p">):</span>
+    <span class="n">model</span><span class="p">[</span><span class="n">index</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+
+
+<span class="k">def</span> <span class="nf">genome</span><span class="p">(</span><span class="n">file_pattern</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Stream a genome, letter by letter, from a list of FASTA filenames.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">tz</span><span class="o">.</span><span class="n">pipe</span><span class="p">(</span><span class="n">file_pattern</span><span class="p">,</span> <span class="n">glob</span><span class="p">,</span> <span class="nb">sorted</span><span class="p">,</span>  <span class="c1"># Filenames</span>
+                   <span class="n">c</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="nb">open</span><span class="p">),</span>  <span class="c1"># lines</span>
+                   <span class="c1"># concatenate lines from all files:</span>
+                   <span class="n">tz</span><span class="o">.</span><span class="n">concat</span><span class="p">,</span>
+                   <span class="c1"># drop header from each sequence</span>
+                   <span class="n">c</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">is_sequence</span><span class="p">),</span>
+                   <span class="c1"># concatenate characters from all lines</span>
+                   <span class="n">tz</span><span class="o">.</span><span class="n">concat</span><span class="p">,</span>
+                   <span class="c1"># discard newlines and &#39;N&#39;</span>
+                   <span class="n">c</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">is_nucleotide</span><span class="p">))</span>
+
+
+<span class="k">def</span> <span class="nf">markov</span><span class="p">(</span><span class="n">seq</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Get a 1st-order Markov model from a sequence of nucleotides.&quot;&quot;&quot;</span>
+    <span class="n">model</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">8</span><span class="p">,</span> <span class="mi">8</span><span class="p">))</span>
+    <span class="n">tz</span><span class="o">.</span><span class="n">last</span><span class="p">(</span><span class="n">tz</span><span class="o">.</span><span class="n">pipe</span><span class="p">(</span><span class="n">seq</span><span class="p">,</span>
+                    <span class="n">c</span><span class="o">.</span><span class="n">sliding_window</span><span class="p">(</span><span class="mi">2</span><span class="p">),</span>        <span class="c1"># each successive tuple</span>
+                    <span class="n">c</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">PDICT</span><span class="o">.</span><span class="fm">__getitem__</span><span class="p">),</span>   <span class="c1"># location in matrix of tuple</span>
+                    <span class="n">c</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">increment_model</span><span class="p">(</span><span class="n">model</span><span class="p">))))</span>  <span class="c1"># increment matrix</span>
+    <span class="c1"># convert counts to transition probability matrix</span>
+    <span class="n">model</span> <span class="o">/=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)[:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">model</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>We can then do the following to obtain a Markov model of repetitive sequences
+in the fruit-fly genome:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="o">%%time</span>it -r 1 -n 1
+<span class="n">dm</span> <span class="o">=</span> <span class="s1">&#39;data/dm6.fa&#39;</span>
+<span class="n">model</span> <span class="o">=</span> <span class="n">tz</span><span class="o">.</span><span class="n">pipe</span><span class="p">(</span><span class="n">dm</span><span class="p">,</span> <span class="n">genome</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">take</span><span class="p">(</span><span class="mi">10</span><span class="o">**</span><span class="mi">7</span><span class="p">),</span> <span class="n">markov</span><span class="p">)</span>
+<span class="c1"># we use `take` to just run on the first 10 million bases, to speed things up.</span>
+<span class="c1"># the take step can just be removed if you have ~5-10 mins to wait.</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+<div class="output_subarea output_text output_error">
+<pre>
+<span class="ansi-red-fg">---------------------------------------------------------------------------</span>
+<span class="ansi-red-fg">IndexError</span>                                Traceback (most recent call last)
+<span class="ansi-green-fg">&lt;ipython-input-8-2bb7702d650d&gt;</span> in <span class="ansi-cyan-fg">&lt;module&gt;</span>
+<span class="ansi-green-fg">----&gt; 1</span><span class="ansi-red-fg"> </span>get_ipython<span class="ansi-blue-fg">(</span><span class="ansi-blue-fg">)</span><span class="ansi-blue-fg">.</span>run_cell_magic<span class="ansi-blue-fg">(</span><span class="ansi-blue-fg">&#39;timeit&#39;</span><span class="ansi-blue-fg">,</span> <span class="ansi-blue-fg">&#39;-r 1 -n 1&#39;</span><span class="ansi-blue-fg">,</span> <span class="ansi-blue-fg">&#34;dm = &#39;data/dm6.fa&#39;\nmodel = tz.pipe(dm, genome, c.take(10**7), markov)\n# we use `take` to just run on the first 10 million bases, to speed things up.\n# the take step can just be removed if you have ~5-10 mins to wait.\n&#34;</span><span class="ansi-blue-fg">)</span>
+
+<span class="ansi-green-fg">~/miniconda3/lib/python3.7/site-packages/IPython/core/interactiveshell.py</span> in <span class="ansi-cyan-fg">run_cell_magic</span><span class="ansi-blue-fg">(self, magic_name, line, cell)</span>
+<span class="ansi-green-intense-fg ansi-bold">   2357</span>             <span class="ansi-green-fg">with</span> self<span class="ansi-blue-fg">.</span>builtin_trap<span class="ansi-blue-fg">:</span>
+<span class="ansi-green-intense-fg ansi-bold">   2358</span>                 args <span class="ansi-blue-fg">=</span> <span class="ansi-blue-fg">(</span>magic_arg_s<span class="ansi-blue-fg">,</span> cell<span class="ansi-blue-fg">)</span>
+<span class="ansi-green-fg">-&gt; 2359</span><span class="ansi-red-fg">                 </span>result <span class="ansi-blue-fg">=</span> fn<span class="ansi-blue-fg">(</span><span class="ansi-blue-fg">*</span>args<span class="ansi-blue-fg">,</span> <span class="ansi-blue-fg">**</span>kwargs<span class="ansi-blue-fg">)</span>
+<span class="ansi-green-intense-fg ansi-bold">   2360</span>             <span class="ansi-green-fg">return</span> result
+<span class="ansi-green-intense-fg ansi-bold">   2361</span> 
+
+<span class="ansi-green-fg">&lt;/home/marc/miniconda3/lib/python3.7/site-packages/decorator.py:decorator-gen-60&gt;</span> in <span class="ansi-cyan-fg">timeit</span><span class="ansi-blue-fg">(self, line, cell, local_ns)</span>
+
+<span class="ansi-green-fg">~/miniconda3/lib/python3.7/site-packages/IPython/core/magic.py</span> in <span class="ansi-cyan-fg">&lt;lambda&gt;</span><span class="ansi-blue-fg">(f, *a, **k)</span>
+<span class="ansi-green-intense-fg ansi-bold">    185</span>     <span class="ansi-red-fg"># but it&#39;s overkill for just that one bit of state.</span>
+<span class="ansi-green-intense-fg ansi-bold">    186</span>     <span class="ansi-green-fg">def</span> magic_deco<span class="ansi-blue-fg">(</span>arg<span class="ansi-blue-fg">)</span><span class="ansi-blue-fg">:</span>
+<span class="ansi-green-fg">--&gt; 187</span><span class="ansi-red-fg">         </span>call <span class="ansi-blue-fg">=</span> <span class="ansi-green-fg">lambda</span> f<span class="ansi-blue-fg">,</span> <span class="ansi-blue-fg">*</span>a<span class="ansi-blue-fg">,</span> <span class="ansi-blue-fg">**</span>k<span class="ansi-blue-fg">:</span> f<span class="ansi-blue-fg">(</span><span class="ansi-blue-fg">*</span>a<span class="ansi-blue-fg">,</span> <span class="ansi-blue-fg">**</span>k<span class="ansi-blue-fg">)</span>
+<span class="ansi-green-intense-fg ansi-bold">    188</span> 
+<span class="ansi-green-intense-fg ansi-bold">    189</span>         <span class="ansi-green-fg">if</span> callable<span class="ansi-blue-fg">(</span>arg<span class="ansi-blue-fg">)</span><span class="ansi-blue-fg">:</span>
+
+<span class="ansi-green-fg">~/miniconda3/lib/python3.7/site-packages/IPython/core/magics/execution.py</span> in <span class="ansi-cyan-fg">timeit</span><span class="ansi-blue-fg">(self, line, cell, local_ns)</span>
+<span class="ansi-green-intense-fg ansi-bold">   1160</span>                     <span class="ansi-green-fg">break</span>
+<span class="ansi-green-intense-fg ansi-bold">   1161</span> 
+<span class="ansi-green-fg">-&gt; 1162</span><span class="ansi-red-fg">         </span>all_runs <span class="ansi-blue-fg">=</span> timer<span class="ansi-blue-fg">.</span>repeat<span class="ansi-blue-fg">(</span>repeat<span class="ansi-blue-fg">,</span> number<span class="ansi-blue-fg">)</span>
+<span class="ansi-green-intense-fg ansi-bold">   1163</span>         best <span class="ansi-blue-fg">=</span> min<span class="ansi-blue-fg">(</span>all_runs<span class="ansi-blue-fg">)</span> <span class="ansi-blue-fg">/</span> number
+<span class="ansi-green-intense-fg ansi-bold">   1164</span>         worst <span class="ansi-blue-fg">=</span> max<span class="ansi-blue-fg">(</span>all_runs<span class="ansi-blue-fg">)</span> <span class="ansi-blue-fg">/</span> number
+
+<span class="ansi-green-fg">~/miniconda3/lib/python3.7/timeit.py</span> in <span class="ansi-cyan-fg">repeat</span><span class="ansi-blue-fg">(self, repeat, number)</span>
+<span class="ansi-green-intense-fg ansi-bold">    202</span>         r <span class="ansi-blue-fg">=</span> <span class="ansi-blue-fg">[</span><span class="ansi-blue-fg">]</span>
+<span class="ansi-green-intense-fg ansi-bold">    203</span>         <span class="ansi-green-fg">for</span> i <span class="ansi-green-fg">in</span> range<span class="ansi-blue-fg">(</span>repeat<span class="ansi-blue-fg">)</span><span class="ansi-blue-fg">:</span>
+<span class="ansi-green-fg">--&gt; 204</span><span class="ansi-red-fg">             </span>t <span class="ansi-blue-fg">=</span> self<span class="ansi-blue-fg">.</span>timeit<span class="ansi-blue-fg">(</span>number<span class="ansi-blue-fg">)</span>
+<span class="ansi-green-intense-fg ansi-bold">    205</span>             r<span class="ansi-blue-fg">.</span>append<span class="ansi-blue-fg">(</span>t<span class="ansi-blue-fg">)</span>
+<span class="ansi-green-intense-fg ansi-bold">    206</span>         <span class="ansi-green-fg">return</span> r
+
+<span class="ansi-green-fg">~/miniconda3/lib/python3.7/site-packages/IPython/core/magics/execution.py</span> in <span class="ansi-cyan-fg">timeit</span><span class="ansi-blue-fg">(self, number)</span>
+<span class="ansi-green-intense-fg ansi-bold">    167</span>         gc<span class="ansi-blue-fg">.</span>disable<span class="ansi-blue-fg">(</span><span class="ansi-blue-fg">)</span>
+<span class="ansi-green-intense-fg ansi-bold">    168</span>         <span class="ansi-green-fg">try</span><span class="ansi-blue-fg">:</span>
+<span class="ansi-green-fg">--&gt; 169</span><span class="ansi-red-fg">             </span>timing <span class="ansi-blue-fg">=</span> self<span class="ansi-blue-fg">.</span>inner<span class="ansi-blue-fg">(</span>it<span class="ansi-blue-fg">,</span> self<span class="ansi-blue-fg">.</span>timer<span class="ansi-blue-fg">)</span>
+<span class="ansi-green-intense-fg ansi-bold">    170</span>         <span class="ansi-green-fg">finally</span><span class="ansi-blue-fg">:</span>
+<span class="ansi-green-intense-fg ansi-bold">    171</span>             <span class="ansi-green-fg">if</span> gcold<span class="ansi-blue-fg">:</span>
+
+<span class="ansi-green-fg">&lt;magic-timeit&gt;</span> in <span class="ansi-cyan-fg">inner</span><span class="ansi-blue-fg">(_it, _timer)</span>
+
+<span class="ansi-green-fg">~/miniconda3/lib/python3.7/site-packages/toolz/functoolz.py</span> in <span class="ansi-cyan-fg">pipe</span><span class="ansi-blue-fg">(data, *funcs)</span>
+<span class="ansi-green-intense-fg ansi-bold">    632</span>     &#34;&#34;&#34;
+<span class="ansi-green-intense-fg ansi-bold">    633</span>     <span class="ansi-green-fg">for</span> func <span class="ansi-green-fg">in</span> funcs<span class="ansi-blue-fg">:</span>
+<span class="ansi-green-fg">--&gt; 634</span><span class="ansi-red-fg">         </span>data <span class="ansi-blue-fg">=</span> func<span class="ansi-blue-fg">(</span>data<span class="ansi-blue-fg">)</span>
+<span class="ansi-green-intense-fg ansi-bold">    635</span>     <span class="ansi-green-fg">return</span> data
+<span class="ansi-green-intense-fg ansi-bold">    636</span> 
+
+<span class="ansi-green-fg">&lt;ipython-input-7-737b2d6d62f6&gt;</span> in <span class="ansi-cyan-fg">markov</span><span class="ansi-blue-fg">(seq)</span>
+<span class="ansi-green-intense-fg ansi-bold">     39</span>                     c<span class="ansi-blue-fg">.</span>sliding_window<span class="ansi-blue-fg">(</span><span class="ansi-cyan-fg">2</span><span class="ansi-blue-fg">)</span><span class="ansi-blue-fg">,</span>        <span class="ansi-red-fg"># each successive tuple</span>
+<span class="ansi-green-intense-fg ansi-bold">     40</span>                     c<span class="ansi-blue-fg">.</span>map<span class="ansi-blue-fg">(</span>PDICT<span class="ansi-blue-fg">.</span>__getitem__<span class="ansi-blue-fg">)</span><span class="ansi-blue-fg">,</span>   <span class="ansi-red-fg"># location in matrix of tuple</span>
+<span class="ansi-green-fg">---&gt; 41</span><span class="ansi-red-fg">                     c.map(increment_model(model))))  # increment matrix
+</span><span class="ansi-green-intense-fg ansi-bold">     42</span>     <span class="ansi-red-fg"># convert counts to transition probability matrix</span>
+<span class="ansi-green-intense-fg ansi-bold">     43</span>     model <span class="ansi-blue-fg">/=</span> np<span class="ansi-blue-fg">.</span>sum<span class="ansi-blue-fg">(</span>model<span class="ansi-blue-fg">,</span> axis<span class="ansi-blue-fg">=</span><span class="ansi-cyan-fg">1</span><span class="ansi-blue-fg">)</span><span class="ansi-blue-fg">[</span><span class="ansi-blue-fg">:</span><span class="ansi-blue-fg">,</span> np<span class="ansi-blue-fg">.</span>newaxis<span class="ansi-blue-fg">]</span>
+
+<span class="ansi-green-fg">~/miniconda3/lib/python3.7/site-packages/toolz/itertoolz.py</span> in <span class="ansi-cyan-fg">last</span><span class="ansi-blue-fg">(seq)</span>
+<span class="ansi-green-intense-fg ansi-bold">    406</span>     <span class="ansi-blue-fg">&#39;C&#39;</span>
+<span class="ansi-green-intense-fg ansi-bold">    407</span>     &#34;&#34;&#34;
+<span class="ansi-green-fg">--&gt; 408</span><span class="ansi-red-fg">     </span><span class="ansi-green-fg">return</span> tail<span class="ansi-blue-fg">(</span><span class="ansi-cyan-fg">1</span><span class="ansi-blue-fg">,</span> seq<span class="ansi-blue-fg">)</span><span class="ansi-blue-fg">[</span><span class="ansi-cyan-fg">0</span><span class="ansi-blue-fg">]</span>
+<span class="ansi-green-intense-fg ansi-bold">    409</span> 
+<span class="ansi-green-intense-fg ansi-bold">    410</span> 
+
+<span class="ansi-red-fg">IndexError</span>: tuple index out of range</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>There's a <em>lot</em> going on in that example, so we are going to unpack it little by little.
+We'll actually run the example at the end of the chapter.</p>
+<p>The first thing to note is how many functions come from the <a href="http://toolz.readthedocs.org/en/latest/">Toolz library</a>.
+For example from Toolz we've used, <code>pipe</code>, <code>sliding_window</code>, <code>frequencies</code>, and a curried version of <code>map</code> (more on this later).
+That's because Toolz is written specifically to take advantage of Python's iterators, and easily manipulate streams.</p>
+<p>Let's start with <code>pipe</code>.
+This function is simply syntactic sugar to make nested function calls easier to read.
+This is important because that pattern becomes increasingly common when dealing with iterators.</p>
+<p>As a simple example, let's rewrite our running mean using <code>pipe</code>:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">import</span> <span class="nn">toolz</span> <span class="k">as</span> <span class="nn">tz</span>
+<span class="n">filename</span> <span class="o">=</span> <span class="s1">&#39;data/expr.tsv&#39;</span>
+<span class="n">mean</span> <span class="o">=</span> <span class="n">tz</span><span class="o">.</span><span class="n">pipe</span><span class="p">(</span><span class="n">filename</span><span class="p">,</span> <span class="n">readtsv</span><span class="p">,</span> <span class="n">add1</span><span class="p">,</span> <span class="n">log</span><span class="p">,</span> <span class="n">running_mean</span><span class="p">)</span>
+
+<span class="c1"># This is equivalent to nesting the functions like this:</span>
+<span class="c1"># running_mean(log(add1(readtsv(filename))))</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+<div class="output_subarea output_stream output_stdout output_text">
+<pre>starting running mean
+starting log
+starting adding 1
+starting readtsv
+reading line 0
+adding 1 to line 0
+taking log of array 0
+adding line 0 to the running mean
+reading line 1
+adding 1 to line 1
+taking log of array 1
+adding line 1 to the running mean
+reading line 2
+adding 1 to line 2
+taking log of array 2
+adding line 2 to the running mean
+reading line 3
+adding 1 to line 3
+taking log of array 3
+adding line 3 to the running mean
+reading line 4
+adding 1 to line 4
+taking log of array 4
+adding line 4 to the running mean
+finished readtsv
+finished adding 1
+finished log
+returning mean
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>What was originally multiple lines, or an unwieldy mess of parentheses, is now a clean description of the sequential transformations of the input data.
+Much easier to understand!</p>
+<p>This strategy also has an advantage over the original NumPy implementation: if we scale our data to millions or billions of rows, our computer might struggle to hold all the data in memory.
+In contrast, here we are only loading lines from disk one at a time, and maintaining only a single line's worth of data.</p>
+<h2 id="k-mer-counting-and-error-correction">k-mer counting and error correction<a class="anchor-link" href="#k-mer-counting-and-error-correction"> </a></h2><p>You might want to review chapters 1 and 2 for information about DNA and genomics.
+Briefly, your genetic information, the blueprint for making <em>you</em>, is encoded as a sequence of chemical <em>bases</em> in your <em>genome</em>.
+These are really, really tiny, so you can't just look in a microscope and read them.
+You also can't read a long string of them: errors accumulate and the readout becomes unusable.
+(New technology is changing this, but here we will focus on short-read sequencing data, the most common today.)
+Luckily, every one of your cells has an identical copy of your genome, so what we can do is shred those copies into tiny segments (about 100 bases long), and then assemble those like an enormous puzzle of 30 million pieces.</p>
+<p>Before performing assembly, it is vital to perform read correction.
+During DNA sequencing some bases are incorrectly read out, and must be fixed, or they will mess up the assembly.
+(Imagine having puzzle pieces with the wrong shape.)</p>
+<p>One correction strategy is to find similar reads in your dataset and fix the error by grabbing the correct information from those reads. Or alternatively, you may choose to completely discard those reads containing errors.</p>
+<p>However, this is a very inefficient way to do it, because finding similar reads means you would compare each read to every other read.
+This takes $N^2$ operations, or $9 \times 10^{14}$ for a 30 million read dataset!
+(And these are not cheap operations.)</p>
+<p>There is another way.
+<a href="http://www.pnas.org/content/98/17/9748.full">Pavel Pevzner and others</a> realized that reads could be broken down into smaller, overlapping <em>k-mers</em>, substrings of length k, which can then be stored in a hash table (a dictionary, in Python).
+This has tons of advantages, but the main one is that instead of computing on the total number of reads, which can be arbitrarily large, we can compute on the total number of k-mers, which can only be as large as the genome itself — usually 1-2 orders of magnitude smaller than the reads.</p>
+<p>If we choose a value for k that is large enough to ensure any k-mer appears only once in the genome, the number of times a k-mer appears is exactly the number of reads that originate from that part of the genome.
+This is called the <em>coverage</em> of that region.</p>
+<p>If a read has an error in it, there is a high probability that the k-mers overlapping the error will be unique or close to unique in the genome.
+Think of the equivalent in English: if you were to take reads from Shakespeare, and one read was "to be or nob to be", the 6-mer "nob to" will appear rarely or not at all, whereas "not to" will be very frequent.</p>
+<p>This is the basis for k-mer error correction: split the reads into k-mers, count the occurrence of each k-mer, and use some logic to replace rare k-mers in reads with similar common ones.
+(Or, alternatively, discard reads with erroneous k-mers.
+This is possible because reads are so abundant that we can afford to toss out erroneous data.)</p>
+<p>This is also an example in which streaming is <em>essential</em>.
+As mentioned before, the number of reads can be enormous, so we don't want to store them in memory.</p>
+<p>DNA sequence data is commonly represented in FASTA format.
+This is a plaintext format, consisting of one or many DNA sequences per file, each with a name and the actual sequence.</p>
+<p>A sample FASTA file:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+    > sequence_name1
+    TCAATCTCTTTTATATTAGATCTCGTTAAAGTAAAATTTTGGTTTGTGTTAAAGTACAAG
+    GGGTACCTATGACCACGGAACCAACAAAGTGCCTAAATAGGACATCAAGTAACTAGCGGT
+    ACGT
+
+    > sequence_name2
+    ATGTCCCAGGCGTTCCTTTTGCATTTGCTTCGCATTAACAGAATATCCAGCGTACTTAGG
+    ATTGTCGACCTGTCTTGTCGTACGTGGCCGCAACACCAGGTATAGTGCCAATACAAGTCA
+    GACTAAAACTGGTTC
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Now we have the required information to convert a stream of lines from a FASTA file to a count of k-mers:</p>
+<ul>
+<li>filter lines so that only sequence lines are used</li>
+<li>for each sequence line, produce a stream of k-mers</li>
+<li>add each k-mer to a dictionary counter</li>
+</ul>
+<p>Here's how you would do this in pure Python, using nothing but built-ins:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="k">def</span> <span class="nf">is_sequence</span><span class="p">(</span><span class="n">line</span><span class="p">):</span>
+    <span class="n">line</span> <span class="o">=</span> <span class="n">line</span><span class="o">.</span><span class="n">rstrip</span><span class="p">()</span>  <span class="c1"># remove &#39;\n&#39; at end of line</span>
+    <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="n">line</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">line</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;&gt;&#39;</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">reads_to_kmers</span><span class="p">(</span><span class="n">reads_iter</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="mi">7</span><span class="p">):</span>
+     <span class="k">for</span> <span class="n">read</span> <span class="ow">in</span> <span class="n">reads_iter</span><span class="p">:</span>
+         <span class="k">for</span> <span class="n">start</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">read</span><span class="p">)</span> <span class="o">-</span> <span class="n">k</span><span class="p">):</span>
+             <span class="k">yield</span> <span class="n">read</span><span class="p">[</span><span class="n">start</span> <span class="p">:</span> <span class="n">start</span> <span class="o">+</span> <span class="n">k</span><span class="p">]</span>  <span class="c1"># note yield, so this is a generator</span>
+
+<span class="k">def</span> <span class="nf">kmer_counter</span><span class="p">(</span><span class="n">kmer_iter</span><span class="p">):</span>
+    <span class="n">counts</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">kmer</span> <span class="ow">in</span> <span class="n">kmer_iter</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">kmer</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">counts</span><span class="p">:</span>
+            <span class="n">counts</span><span class="p">[</span><span class="n">kmer</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">counts</span><span class="p">[</span><span class="n">kmer</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+    <span class="k">return</span> <span class="n">counts</span>
+
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s1">&#39;data/sample.fasta&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">fin</span><span class="p">:</span>
+    <span class="n">reads</span> <span class="o">=</span> <span class="nb">filter</span><span class="p">(</span><span class="n">is_sequence</span><span class="p">,</span> <span class="n">fin</span><span class="p">)</span>
+    <span class="n">kmers</span> <span class="o">=</span> <span class="n">reads_to_kmers</span><span class="p">(</span><span class="n">reads</span><span class="p">)</span>
+    <span class="n">counts</span> <span class="o">=</span> <span class="n">kmer_counter</span><span class="p">(</span><span class="n">kmers</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>This totally works and is streaming, so reads are loaded from disk one at a time and piped through the k-mer converter and to the k-mer counter.
+We can then plot a histogram of the counts, and confirm that there are indeed two well-separated populations of correct and erroneous k-mers:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="c1"># Make plots appear inline, set custom plotting style</span>
+<span class="o">%</span><span class="k">matplotlib</span> inline
+<span class="kn">import</span> <span class="nn">matplotlib.pyplot</span> <span class="k">as</span> <span class="nn">plt</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">style</span><span class="o">.</span><span class="n">use</span><span class="p">(</span><span class="s1">&#39;style/elegant.mplstyle&#39;</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="k">def</span> <span class="nf">integer_histogram</span><span class="p">(</span><span class="n">counts</span><span class="p">,</span> <span class="n">normed</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">xlim</span><span class="o">=</span><span class="p">[],</span> <span class="n">ylim</span><span class="o">=</span><span class="p">[],</span>
+                      <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="n">hist</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">bincount</span><span class="p">(</span><span class="n">counts</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">normed</span><span class="p">:</span>
+        <span class="n">hist</span> <span class="o">=</span> <span class="n">hist</span> <span class="o">/</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">hist</span><span class="p">)</span>
+    <span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">()</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">hist</span><span class="o">.</span><span class="n">size</span><span class="p">),</span> <span class="n">hist</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s1">&#39;counts&#39;</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s1">&#39;frequency&#39;</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_xlim</span><span class="p">(</span><span class="o">*</span><span class="n">xlim</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_ylim</span><span class="p">(</span><span class="o">*</span><span class="n">ylim</span><span class="p">)</span>
+
+<span class="n">counts_arr</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">fromiter</span><span class="p">(</span><span class="n">counts</span><span class="o">.</span><span class="n">values</span><span class="p">(),</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span> <span class="n">count</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">counts</span><span class="p">))</span>
+<span class="n">integer_histogram</span><span class="p">(</span><span class="n">counts_arr</span><span class="p">,</span> <span class="n">xlim</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">250</span><span class="p">))</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch8_24_0.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="Histogram of k-mer counts" -->
+
+<p>Notice the nice distribution of k-mer frequencies, along with a big bump of k-mers (at the left of the plot) that appear only once.
+Such low frequency k-mers are likely to be errors.</p>
+<p>But, with the code above, we are actually doing a bit too much work.
+A lot of the functionality we wrote in for loops and yields is actually <em>stream manipulation</em>: transforming a stream of data into a different kind of data, and accumulating it at the end.
+Toolz has a lot of stream manipulation primitives that make it easy to write the above in just one function call; and, once you know the names of the transforming functions, it also becomes easier to visualize what is happening to your data stream at each point.</p>
+<p>For example, the <em>sliding window</em> function is exactly what we need to make k-mers:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="n">tz</span><span class="o">.</span><span class="n">sliding_window</span><span class="o">.</span><span class="vm">__doc__</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+<div class="output_subarea output_stream output_stdout output_text">
+<pre> A sequence of overlapping subsequences
+
+    &gt;&gt;&gt; list(sliding_window(2, [1, 2, 3, 4]))
+    [(1, 2), (2, 3), (3, 4)]
+
+    This function creates a sliding window suitable for transformations like
+    sliding means / smoothing
+
+    &gt;&gt;&gt; mean = lambda seq: float(sum(seq)) / len(seq)
+    &gt;&gt;&gt; list(map(mean, sliding_window(2, [1, 2, 3, 4])))
+    [1.5, 2.5, 3.5]
+    
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Additionally, the <em>frequencies</em> function counts the appearance of individual items in a data stream.
+Together with pipe, we can now count k-mers in a single function call:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">from</span> <span class="nn">toolz</span> <span class="k">import</span> <span class="n">curried</span> <span class="k">as</span> <span class="n">c</span>
+
+<span class="n">k</span> <span class="o">=</span> <span class="mi">7</span>
+<span class="n">counts</span> <span class="o">=</span> <span class="n">tz</span><span class="o">.</span><span class="n">pipe</span><span class="p">(</span><span class="s1">&#39;data/sample.fasta&#39;</span><span class="p">,</span> <span class="nb">open</span><span class="p">,</span>
+                 <span class="n">c</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">is_sequence</span><span class="p">),</span>
+                 <span class="n">c</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="nb">str</span><span class="o">.</span><span class="n">rstrip</span><span class="p">),</span>
+                 <span class="n">c</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">sliding_window</span><span class="p">(</span><span class="n">k</span><span class="p">)),</span>
+                 <span class="n">tz</span><span class="o">.</span><span class="n">concat</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="s1">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">),</span>
+                 <span class="n">tz</span><span class="o">.</span><span class="n">frequencies</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>But, just a minute: what are all those <code>c.function</code> calls from <code>toolz.curried</code>?</p>
+<h2 id="Currying:-the-spice-of-streaming">Currying: the spice of streaming<a class="anchor-link" href="#Currying:-the-spice-of-streaming"> </a></h2><p>Earlier, we briefly used a <em>curried</em> version of the <code>map</code> function, which
+applies a given function to each element in a sequence. Now that we've mixed a
+few more curried calls in there, it's time share with you what it means!
+Currying is not named after the spice blend (though it does spice up your code).
+It is named for Haskell Curry, the mathematician who invented the concept.
+Haskell Curry is also the namesake of the Haskell programming language — in which
+<em>all</em> functions are curried!</p>
+<p>"Currying" means <em>partially</em> evaluating a function and returning another, "smaller" function.
+Normally in Python if you don't give a function all of its required arguments then it will throw a fit.
+In contrast, a curried function can just take <em>some</em> of those arguments.
+If the curried function doesn't get enough arguments, it returns a new function that takes the leftover arguments.
+Once that second function is called with the remaining arguments, it can perform the original task.
+Another word for currying is partial evaluation.
+In functional programming, currying is a way to produce a function that can wait for the rest of the arguments to show up later.</p>
+<p>So, while the function call <code>map(np.log, numbers_list)</code> applies the <code>np.log</code>
+function to all of the numbers in <code>numbers_list</code> (returning a sequence of the
+logged numbers), the call <code>toolz.curried.map(np.log)</code> returns a <em>function</em> that
+takes in a sequence of numbers and returns a sequence of logged numbers.</p>
+<p>It turns out that having a function that already knows about some of the arguments is perfect for streaming!
+We've seen a hint of how powerful currying and pipes can be together in the
+above code snippet.</p>
+<p>But currying can be a bit of a mind-bend when you first start, so we'll try it with some simple examples to demonstrate how it works.
+Let's start by writing a simple, non-curried function:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="k">def</span> <span class="nf">add</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">a</span> <span class="o">+</span> <span class="n">b</span>
+
+<span class="n">add</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">5</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_text output_subarea output_execute_result">
+<pre>7</pre>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Now we write a similar function which we curry manually:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="k">def</span> <span class="nf">add_curried</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">b</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="c1"># second argument not given, so make a function and return it</span>
+        <span class="k">def</span> <span class="nf">add_partial</span><span class="p">(</span><span class="n">b</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">add</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">add_partial</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="c1"># Both values were given, so we can just return a value</span>
+        <span class="k">return</span> <span class="n">add</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Now let's try out a curried function to make sure it does what we expect.</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">add_curried</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">5</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_text output_subarea output_execute_result">
+<pre>7</pre>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Okay, it acts like a normal function when given both variables.
+Now let's leave out the second variable.</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">add_curried</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_text output_subarea output_execute_result">
+<pre>&lt;function __main__.add_curried.&lt;locals&gt;.add_partial(b)&gt;</pre>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>As we expected, it returned a function.
+Now let's use that function:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">add2</span> <span class="o">=</span> <span class="n">add_curried</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+<span class="n">add2</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_text output_subarea output_execute_result">
+<pre>7</pre>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Now, that worked, but <code>add_curried</code> was a hard function to read.
+Future us will probably have trouble remembering how we wrote that code.
+Luckily, Toolz has the, well, tools to help us out.</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">import</span> <span class="nn">toolz</span> <span class="k">as</span> <span class="nn">tz</span>
+
+<span class="nd">@tz</span><span class="o">.</span><span class="n">curry</span>  <span class="c1"># Use curry as a decorator</span>
+<span class="k">def</span> <span class="nf">add</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">x</span> <span class="o">+</span> <span class="n">y</span>
+
+<span class="n">add_partial</span> <span class="o">=</span> <span class="n">add</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+<span class="n">add_partial</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_text output_subarea output_execute_result">
+<pre>7</pre>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>To summarize what we did, <code>add</code> is now a curried function, so it can take one of the arguments and returns another function, <code>add_partial</code>, which “remembers” that argument.</p>
+<p>In fact, all of the Toolz functions are also available as curried functions in the <code>toolz.curried</code> namespace.
+Toolz also includes curried version of some handy higher order Python functions like <code>map</code>, <code>filter</code> and <code>reduce</code>.
+We will import the <code>curried</code> namespace as <code>c</code> so our code doesn't get too cluttered.
+So for example the curried version of <code>map</code> will be <code>c.map</code>.
+Note, that the curried functions (e.g. <code>c.map</code>) are different from the <code>@curry</code> decorator, which is used to create a curried function.</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">from</span> <span class="nn">toolz</span> <span class="k">import</span> <span class="n">curried</span> <span class="k">as</span> <span class="n">c</span>
+<span class="n">c</span><span class="o">.</span><span class="n">map</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_text output_subarea output_execute_result">
+<pre>&lt;class &#39;map&#39;&gt;</pre>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>As a reminder, <code>map</code> is a built-in function.
+From the <a href="https://docs.python.org/3.4/library/functions.html#map">docs</a>:</p>
+<blockquote><p>map(function, iterable, ...)
+Return an iterator that applies function to every item of iterable, yielding the results.</p>
+</blockquote>
+<p>A curried version of <code>map</code> is particularly handy when working in a Toolz pipe.
+You can just pass a function to <code>c.map</code> and then stream in the iterator later using <code>tz.pipe</code>.
+Take another look at our function for reading in the genome to see how this works in practice.</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="k">def</span> <span class="nf">genome</span><span class="p">(</span><span class="n">file_pattern</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Stream a genome, letter by letter, from a list of FASTA filenames.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">tz</span><span class="o">.</span><span class="n">pipe</span><span class="p">(</span><span class="n">file_pattern</span><span class="p">,</span> <span class="n">glob</span><span class="p">,</span> <span class="nb">sorted</span><span class="p">,</span>  <span class="c1"># Filenames</span>
+                   <span class="n">c</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="nb">open</span><span class="p">),</span>  <span class="c1"># lines</span>
+                   <span class="c1"># concatenate lines from all files:</span>
+                   <span class="n">tz</span><span class="o">.</span><span class="n">concat</span><span class="p">,</span>
+                   <span class="c1"># drop header from each sequence</span>
+                   <span class="n">c</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">is_sequence</span><span class="p">),</span>
+                   <span class="c1"># concatenate characters from all lines</span>
+                   <span class="n">tz</span><span class="o">.</span><span class="n">concat</span><span class="p">,</span>
+                   <span class="c1"># discard newlines and &#39;N&#39;</span>
+                   <span class="n">c</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">is_nucleotide</span><span class="p">))</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<h2 id="Back-to-counting-k-mers">Back to counting k-mers<a class="anchor-link" href="#Back-to-counting-k-mers"> </a></h2><p>Okay, so now we've got our heads around curried, let's get back to our k-mer counting code.
+Here's that code again that used those curried functions:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">from</span> <span class="nn">toolz</span> <span class="k">import</span> <span class="n">curried</span> <span class="k">as</span> <span class="n">c</span>
+
+<span class="n">k</span> <span class="o">=</span> <span class="mi">7</span>
+<span class="n">counts</span> <span class="o">=</span> <span class="n">tz</span><span class="o">.</span><span class="n">pipe</span><span class="p">(</span><span class="s1">&#39;data/sample.fasta&#39;</span><span class="p">,</span> <span class="nb">open</span><span class="p">,</span>
+                 <span class="n">c</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">is_sequence</span><span class="p">),</span>
+                 <span class="n">c</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="nb">str</span><span class="o">.</span><span class="n">rstrip</span><span class="p">),</span>
+                 <span class="n">c</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">sliding_window</span><span class="p">(</span><span class="n">k</span><span class="p">)),</span>
+                 <span class="n">tz</span><span class="o">.</span><span class="n">concat</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="s1">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">),</span>
+                 <span class="n">tz</span><span class="o">.</span><span class="n">frequencies</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>We can now observe the frequency of different k-mers:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">counts</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">fromiter</span><span class="p">(</span><span class="n">counts</span><span class="o">.</span><span class="n">values</span><span class="p">(),</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span> <span class="n">count</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">counts</span><span class="p">))</span>
+<span class="n">integer_histogram</span><span class="p">(</span><span class="n">counts</span><span class="p">,</span> <span class="n">xlim</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">250</span><span class="p">),</span> <span class="n">lw</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch8_48_0.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="Histogram of k-mer counts" -->
+
+<blockquote><p><strong>Tips for working with streams {.callout}</strong></p>
+<ul>
+<li>Convert "list of list" to "long list" with <code>tz.concat</code></li>
+<li>Don’t get caught out:<ul>
+<li>Iterators get consumed.
+So if you make a generator object and do some processing on it, and then a later step fails, you need to re-create the generator.
+The original is already gone.</li>
+<li>Iterators are lazy. You need to force evaluation sometimes.</li>
+</ul>
+</li>
+<li>When you have lots of functions in a pipe, it’s sometimes hard to figure out where things go wrong.
+  Take a small stream and add functions to your pipe one by one from the first/leftmost until you find the broken one.
+  You can also insert <code>map(do(print))</code> (<code>map</code> and <code>do</code> are from
+  <code>toolz.curried</code>) at any point in a stream to print each element while it
+  streams through.</li>
+</ul>
+</blockquote>
+<!-- exercise begin -->
+
+<p><strong>Exercise:</strong>
+The scikit-learn library has an IncrementalPCA class, which allows you to run
+principal components analysis on a dataset without loading the full dataset
+into memory.
+But you need to chunk your data yourself, which makes the code a bit awkward to
+use.
+Make a function that can take a stream of data samples and perform PCA.
+Then, use the function to compute the PCA of the <code>iris</code> machine learning
+dataset, which is in <code>data/iris.csv</code>. (You can also access it from the
+<code>datasets</code> module of scikit-learn, using <code>datasets.load_iris()</code>.) Optionally,
+you can color the points with the species number, found in
+<code>data/iris-target.csv</code>.</p>
+<p><em>Hint:</em> The <code>IncrementalPCA</code> class is in <code>sklearn.decomposition</code>, and
+requires a <em>batch size</em> greater than 1 to train the model. Look at the
+<code>toolz.curried.partition</code> function for how to create a stream of batches from a
+stream of data points.</p>
+<!-- solution begin -->
+
+<p><strong>Solution:</strong>
+First, we write the function to train the model. The function should take in a
+stream of samples and output a PCA model, which can <em>transform</em> new samples by
+projecting them from the original n-dimensional space to the principal
+component space.</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">import</span> <span class="nn">toolz</span> <span class="k">as</span> <span class="nn">tz</span>
+<span class="kn">from</span> <span class="nn">toolz</span> <span class="k">import</span> <span class="n">curried</span> <span class="k">as</span> <span class="n">c</span>
+<span class="kn">from</span> <span class="nn">sklearn</span> <span class="k">import</span> <span class="n">decomposition</span>
+<span class="kn">from</span> <span class="nn">sklearn</span> <span class="k">import</span> <span class="n">datasets</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+
+<span class="k">def</span> <span class="nf">streaming_pca</span><span class="p">(</span><span class="n">samples</span><span class="p">,</span> <span class="n">n_components</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="mi">100</span><span class="p">):</span>
+    <span class="n">ipca</span> <span class="o">=</span> <span class="n">decomposition</span><span class="o">.</span><span class="n">IncrementalPCA</span><span class="p">(</span><span class="n">n_components</span><span class="o">=</span><span class="n">n_components</span><span class="p">,</span>
+                                        <span class="n">batch_size</span><span class="o">=</span><span class="n">batch_size</span><span class="p">)</span>
+    <span class="n">tz</span><span class="o">.</span><span class="n">pipe</span><span class="p">(</span><span class="n">samples</span><span class="p">,</span>  <span class="c1"># iterator of 1D arrays</span>
+            <span class="n">c</span><span class="o">.</span><span class="n">partition</span><span class="p">(</span><span class="n">batch_size</span><span class="p">),</span>  <span class="c1"># iterator of tuples</span>
+            <span class="n">c</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">),</span>  <span class="c1"># iterator of 2D arrays</span>
+            <span class="n">c</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">ipca</span><span class="o">.</span><span class="n">partial_fit</span><span class="p">),</span>  <span class="c1"># partial_fit on each</span>
+            <span class="n">tz</span><span class="o">.</span><span class="n">last</span><span class="p">)</span>  <span class="c1"># Suck the stream of data through the pipeline</span>
+    <span class="k">return</span> <span class="n">ipca</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Now, we can use this function to <em>train</em> (or <em>fit</em>) a PCA model:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">reshape</span> <span class="o">=</span> <span class="n">tz</span><span class="o">.</span><span class="n">curry</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">reshape</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">array_from_txt</span><span class="p">(</span><span class="n">line</span><span class="p">,</span> <span class="n">sep</span><span class="o">=</span><span class="s1">&#39;,&#39;</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">line</span><span class="o">.</span><span class="n">rstrip</span><span class="p">()</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">sep</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">)</span>
+
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s1">&#39;data/iris.csv&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">fin</span><span class="p">:</span>
+    <span class="n">pca_obj</span> <span class="o">=</span> <span class="n">tz</span><span class="o">.</span><span class="n">pipe</span><span class="p">(</span><span class="n">fin</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">array_from_txt</span><span class="p">),</span> <span class="n">streaming_pca</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Finally, we can stream our original samples through the <code>transform</code> function of
+our model. We stack them together to obtain a <code>n_samples</code> by <code>n_components</code>
+matrix of data:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s1">&#39;data/iris.csv&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">fin</span><span class="p">:</span>
+    <span class="n">components</span> <span class="o">=</span> <span class="n">tz</span><span class="o">.</span><span class="n">pipe</span><span class="p">(</span><span class="n">fin</span><span class="p">,</span>
+                         <span class="n">c</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">array_from_txt</span><span class="p">),</span>
+                         <span class="n">c</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">reshape</span><span class="p">(</span><span class="n">newshape</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">))),</span>
+                         <span class="n">c</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">pca_obj</span><span class="o">.</span><span class="n">transform</span><span class="p">),</span>
+                         <span class="n">np</span><span class="o">.</span><span class="n">vstack</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="n">components</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+<div class="output_subarea output_stream output_stdout output_text">
+<pre>(150, 2)
+</pre>
+</div>
+</div>
+</div>
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+<div class="output_subarea output_stream output_stderr output_text">
+<pre>/home/marc/miniconda3/lib/python3.7/site-packages/toolz/functoolz.py:634: FutureWarning: arrays to stack must be passed as a &#34;sequence&#34; type such as list or tuple. Support for non-sequence iterables such as generators is deprecated as of NumPy 1.16 and will raise an error in the future.
+  data = func(data)
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>We can now plot the components:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">iris_types</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">loadtxt</span><span class="p">(</span><span class="s1">&#39;data/iris-target.csv&#39;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">scatter</span><span class="p">(</span><span class="o">*</span><span class="n">components</span><span class="o">.</span><span class="n">T</span><span class="p">,</span> <span class="n">c</span><span class="o">=</span><span class="n">iris_types</span><span class="p">,</span> <span class="n">cmap</span><span class="o">=</span><span class="s1">&#39;viridis&#39;</span><span class="p">);</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch8_56_0.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="Principal components of iris dataset computed with streaming
+PCA" -->
+
+<p>You can verify that this gives (approximately) the same result as a standard
+PCA:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">iris</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">loadtxt</span><span class="p">(</span><span class="s1">&#39;data/iris.csv&#39;</span><span class="p">,</span> <span class="n">delimiter</span><span class="o">=</span><span class="s1">&#39;,&#39;</span><span class="p">)</span>
+<span class="n">components2</span> <span class="o">=</span> <span class="n">decomposition</span><span class="o">.</span><span class="n">PCA</span><span class="p">(</span><span class="n">n_components</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">fit_transform</span><span class="p">(</span><span class="n">iris</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">scatter</span><span class="p">(</span><span class="o">*</span><span class="n">components2</span><span class="o">.</span><span class="n">T</span><span class="p">,</span> <span class="n">c</span><span class="o">=</span><span class="n">iris_types</span><span class="p">,</span> <span class="n">cmap</span><span class="o">=</span><span class="s1">&#39;viridis&#39;</span><span class="p">);</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch8_58_0.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="Principal components of iris dataset computed with normal
+PCA" -->
+
+<p>The difference, of course, is that streaming PCA can scale to extremely large
+datasets.</p>
+<!-- solution end -->
+
+<!-- exercise end -->
+
+<h2 id="Markov-model-from-a-full-genome">Markov model from a full genome<a class="anchor-link" href="#Markov-model-from-a-full-genome"> </a></h2><p>Back to our original code example.
+What is a Markov model, and why is it useful?</p>
+<p>In general, a Markov model assumes that the probability of the system moving to a given state, is only dependent on the state that it was in just previously.
+For example if it is sunny right now, there is a high probability that it will be sunny tomorrow.
+The fact that it was raining yesterday is irrelevant.
+In this theory, all the information required to predict the future is encoded in the current state of things.
+The past is irrelevant.
+This assumption is useful for simplifying otherwise intractable problems, and
+often gives good results.
+Markov models are behind much of the signal processing in mobile phone and
+satellite communications, for example.</p>
+<p>In the context of genomics, as we will see, different functional regions of a
+genome have different <em>transition probabilities</em> between similar states.
+Observing these in a new genome, we can predict something about the function of
+those regions. Going back to the weather analogy, the probability of going from
+a sunny day to a rainy day is very different depending on whether you are in
+Los Angeles or London. Therefore, if I give you a string of (sunny, sunny,
+sunny, rainy, sunny, ...) days, you can predict whether it came from Los
+Angeles or London, assuming you have a previously trained model.</p>
+<p>In this chapter, we'll cover just the model building, for now.</p>
+<ul>
+<li>You can download the <em>Drosophila melanogaster</em> (fruit fly) genome file dm6.fa.gz from
+<a href="http://hgdownload.cse.ucsc.edu/goldenPath/dm6/bigZips/">http://hgdownload.cse.ucsc.edu/goldenPath/dm6/bigZips/</a>.
+You will need to unzip it using: <code>gzip -d dm6.fa.gz</code></li>
+</ul>
+<p>In the genome data, genetic sequence, which consists of the letters A, C, G,
+and T, is encoded as belonging to <em>repetitive elements</em>, a specific class of
+DNA, by whether it is in lower case (repetitive) or upper case
+(non-repetitive). We can use this information when we build the Markov model.</p>
+<p>We want to encode the Markov model as a NumPy array, so we will make
+dictionaries to index from letters to indices in [0, 7] (<code>LDICT</code> for "letters
+dictionary"), and from pairs of letters to 2D indices in ([0, 7], [0, 7])
+(<code>PDICT</code> or "pairs dictionary"):</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">import</span> <span class="nn">itertools</span> <span class="k">as</span> <span class="nn">it</span>
+
+<span class="n">LDICT</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="s1">&#39;ACGTacgt&#39;</span><span class="p">,</span> <span class="nb">range</span><span class="p">(</span><span class="mi">8</span><span class="p">)))</span>
+<span class="n">PDICT</span> <span class="o">=</span> <span class="p">{(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">):</span> <span class="p">(</span><span class="n">LDICT</span><span class="p">[</span><span class="n">a</span><span class="p">],</span> <span class="n">LDICT</span><span class="p">[</span><span class="n">b</span><span class="p">])</span>
+         <span class="k">for</span> <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="ow">in</span> <span class="n">it</span><span class="o">.</span><span class="n">product</span><span class="p">(</span><span class="n">LDICT</span><span class="p">,</span> <span class="n">LDICT</span><span class="p">)}</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>We also want to filter out non-sequence data: the sequence names, which are in
+lines starting with <code>&gt;</code>, and unknown sequence, which is labeled as <code>N</code>, so we
+will make functions to filter on:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="k">def</span> <span class="nf">is_sequence</span><span class="p">(</span><span class="n">line</span><span class="p">):</span>
+    <span class="k">return</span> <span class="ow">not</span> <span class="n">line</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;&gt;&#39;</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">is_nucleotide</span><span class="p">(</span><span class="n">letter</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">letter</span> <span class="ow">in</span> <span class="n">LDICT</span>  <span class="c1"># ignore &#39;N&#39;</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Finally, whenever we get a new nucleotide pair, say, ('A', 'T'), we want to
+increment our Markov model (our NumPy matrix) at the corresponding position. We
+make a curried function to do so:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">import</span> <span class="nn">toolz</span> <span class="k">as</span> <span class="nn">tz</span>
+
+<span class="nd">@tz</span><span class="o">.</span><span class="n">curry</span>
+<span class="k">def</span> <span class="nf">increment_model</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">index</span><span class="p">):</span>
+    <span class="n">model</span><span class="p">[</span><span class="n">index</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>We can now combine these elements to stream a genome into our NumPy matrix.
+Note that, if <code>seq</code> below is a stream, we never need to store the whole genome,
+or even a big chunk of the genome, in memory!</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">from</span> <span class="nn">toolz</span> <span class="k">import</span> <span class="n">curried</span> <span class="k">as</span> <span class="n">c</span>
+
+<span class="k">def</span> <span class="nf">markov</span><span class="p">(</span><span class="n">seq</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Get a 1st-order Markov model from a sequence of nucleotides.&quot;&quot;&quot;</span>
+    <span class="n">model</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">8</span><span class="p">,</span> <span class="mi">8</span><span class="p">))</span>
+    <span class="n">tz</span><span class="o">.</span><span class="n">last</span><span class="p">(</span><span class="n">tz</span><span class="o">.</span><span class="n">pipe</span><span class="p">(</span><span class="n">seq</span><span class="p">,</span>
+                    <span class="n">c</span><span class="o">.</span><span class="n">sliding_window</span><span class="p">(</span><span class="mi">2</span><span class="p">),</span>        <span class="c1"># each successive tuple</span>
+                    <span class="n">c</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">PDICT</span><span class="o">.</span><span class="fm">__getitem__</span><span class="p">),</span>   <span class="c1"># location in matrix of tuple</span>
+                    <span class="n">c</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">increment_model</span><span class="p">(</span><span class="n">model</span><span class="p">))))</span>  <span class="c1"># increment matrix</span>
+    <span class="c1"># convert counts to transition probability matrix</span>
+    <span class="n">model</span> <span class="o">/=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)[:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">model</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Now we simply need to produce that genome stream, and make our Markov model:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">from</span> <span class="nn">glob</span> <span class="k">import</span> <span class="n">glob</span>
+
+<span class="k">def</span> <span class="nf">genome</span><span class="p">(</span><span class="n">file_pattern</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Stream a genome, letter by letter, from a list of FASTA filenames.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">tz</span><span class="o">.</span><span class="n">pipe</span><span class="p">(</span><span class="n">file_pattern</span><span class="p">,</span> <span class="n">glob</span><span class="p">,</span> <span class="nb">sorted</span><span class="p">,</span>  <span class="c1"># Filenames</span>
+                   <span class="n">c</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="nb">open</span><span class="p">),</span>  <span class="c1"># lines</span>
+                   <span class="c1"># concatenate lines from all files:</span>
+                   <span class="n">tz</span><span class="o">.</span><span class="n">concat</span><span class="p">,</span>
+                   <span class="c1"># drop header from each sequence</span>
+                   <span class="n">c</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">is_sequence</span><span class="p">),</span>
+                   <span class="c1"># concatenate characters from all lines</span>
+                   <span class="n">tz</span><span class="o">.</span><span class="n">concat</span><span class="p">,</span>
+                   <span class="c1"># discard newlines and &#39;N&#39;</span>
+                   <span class="n">c</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">is_nucleotide</span><span class="p">))</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Let's try it out on the Drosophila (fruit fly) genome:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="c1"># Download dm6.fa.gz from ftp://hgdownload.cse.ucsc.edu/goldenPath/dm6/bigZips/</span>
+<span class="c1"># Unzip before using: gzip -d dm6.fa.gz</span>
+<span class="n">dm</span> <span class="o">=</span> <span class="s1">&#39;data/dm6.fa&#39;</span>
+<span class="n">model</span> <span class="o">=</span> <span class="n">tz</span><span class="o">.</span><span class="n">pipe</span><span class="p">(</span><span class="n">dm</span><span class="p">,</span> <span class="n">genome</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">take</span><span class="p">(</span><span class="mi">10</span><span class="o">**</span><span class="mi">7</span><span class="p">),</span> <span class="n">markov</span><span class="p">)</span>
+<span class="c1"># we use `take` to just run on the first 10 million bases, to speed things up.</span>
+<span class="c1"># the take step can just be removed if you have ~5-10 mins to wait.</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+<div class="output_subarea output_text output_error">
+<pre>
+<span class="ansi-red-fg">---------------------------------------------------------------------------</span>
+<span class="ansi-red-fg">IndexError</span>                                Traceback (most recent call last)
+<span class="ansi-green-fg">&lt;ipython-input-35-a293146fe656&gt;</span> in <span class="ansi-cyan-fg">&lt;module&gt;</span>
+<span class="ansi-green-intense-fg ansi-bold">      2</span> <span class="ansi-red-fg"># Unzip before using: gzip -d dm6.fa.gz</span>
+<span class="ansi-green-intense-fg ansi-bold">      3</span> dm <span class="ansi-blue-fg">=</span> <span class="ansi-blue-fg">&#39;data/dm6.fa&#39;</span>
+<span class="ansi-green-fg">----&gt; 4</span><span class="ansi-red-fg"> </span>model <span class="ansi-blue-fg">=</span> tz<span class="ansi-blue-fg">.</span>pipe<span class="ansi-blue-fg">(</span>dm<span class="ansi-blue-fg">,</span> genome<span class="ansi-blue-fg">,</span> c<span class="ansi-blue-fg">.</span>take<span class="ansi-blue-fg">(</span><span class="ansi-cyan-fg">10</span><span class="ansi-blue-fg">**</span><span class="ansi-cyan-fg">7</span><span class="ansi-blue-fg">)</span><span class="ansi-blue-fg">,</span> markov<span class="ansi-blue-fg">)</span>
+<span class="ansi-green-intense-fg ansi-bold">      5</span> <span class="ansi-red-fg"># we use `take` to just run on the first 10 million bases, to speed things up.</span>
+<span class="ansi-green-intense-fg ansi-bold">      6</span> <span class="ansi-red-fg"># the take step can just be removed if you have ~5-10 mins to wait.</span>
+
+<span class="ansi-green-fg">~/miniconda3/lib/python3.7/site-packages/toolz/functoolz.py</span> in <span class="ansi-cyan-fg">pipe</span><span class="ansi-blue-fg">(data, *funcs)</span>
+<span class="ansi-green-intense-fg ansi-bold">    632</span>     &#34;&#34;&#34;
+<span class="ansi-green-intense-fg ansi-bold">    633</span>     <span class="ansi-green-fg">for</span> func <span class="ansi-green-fg">in</span> funcs<span class="ansi-blue-fg">:</span>
+<span class="ansi-green-fg">--&gt; 634</span><span class="ansi-red-fg">         </span>data <span class="ansi-blue-fg">=</span> func<span class="ansi-blue-fg">(</span>data<span class="ansi-blue-fg">)</span>
+<span class="ansi-green-intense-fg ansi-bold">    635</span>     <span class="ansi-green-fg">return</span> data
+<span class="ansi-green-intense-fg ansi-bold">    636</span> 
+
+<span class="ansi-green-fg">&lt;ipython-input-33-de502db3ab8b&gt;</span> in <span class="ansi-cyan-fg">markov</span><span class="ansi-blue-fg">(seq)</span>
+<span class="ansi-green-intense-fg ansi-bold">      7</span>                     c<span class="ansi-blue-fg">.</span>sliding_window<span class="ansi-blue-fg">(</span><span class="ansi-cyan-fg">2</span><span class="ansi-blue-fg">)</span><span class="ansi-blue-fg">,</span>        <span class="ansi-red-fg"># each successive tuple</span>
+<span class="ansi-green-intense-fg ansi-bold">      8</span>                     c<span class="ansi-blue-fg">.</span>map<span class="ansi-blue-fg">(</span>PDICT<span class="ansi-blue-fg">.</span>__getitem__<span class="ansi-blue-fg">)</span><span class="ansi-blue-fg">,</span>   <span class="ansi-red-fg"># location in matrix of tuple</span>
+<span class="ansi-green-fg">----&gt; 9</span><span class="ansi-red-fg">                     c.map(increment_model(model))))  # increment matrix
+</span><span class="ansi-green-intense-fg ansi-bold">     10</span>     <span class="ansi-red-fg"># convert counts to transition probability matrix</span>
+<span class="ansi-green-intense-fg ansi-bold">     11</span>     model <span class="ansi-blue-fg">/=</span> np<span class="ansi-blue-fg">.</span>sum<span class="ansi-blue-fg">(</span>model<span class="ansi-blue-fg">,</span> axis<span class="ansi-blue-fg">=</span><span class="ansi-cyan-fg">1</span><span class="ansi-blue-fg">)</span><span class="ansi-blue-fg">[</span><span class="ansi-blue-fg">:</span><span class="ansi-blue-fg">,</span> np<span class="ansi-blue-fg">.</span>newaxis<span class="ansi-blue-fg">]</span>
+
+<span class="ansi-green-fg">~/miniconda3/lib/python3.7/site-packages/toolz/itertoolz.py</span> in <span class="ansi-cyan-fg">last</span><span class="ansi-blue-fg">(seq)</span>
+<span class="ansi-green-intense-fg ansi-bold">    406</span>     <span class="ansi-blue-fg">&#39;C&#39;</span>
+<span class="ansi-green-intense-fg ansi-bold">    407</span>     &#34;&#34;&#34;
+<span class="ansi-green-fg">--&gt; 408</span><span class="ansi-red-fg">     </span><span class="ansi-green-fg">return</span> tail<span class="ansi-blue-fg">(</span><span class="ansi-cyan-fg">1</span><span class="ansi-blue-fg">,</span> seq<span class="ansi-blue-fg">)</span><span class="ansi-blue-fg">[</span><span class="ansi-cyan-fg">0</span><span class="ansi-blue-fg">]</span>
+<span class="ansi-green-intense-fg ansi-bold">    409</span> 
+<span class="ansi-green-intense-fg ansi-bold">    410</span> 
+
+<span class="ansi-red-fg">IndexError</span>: tuple index out of range</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Let's look at the resulting matrix:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="s1">&#39;    &#39;</span><span class="p">,</span> <span class="s1">&#39;      &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="s1">&#39;ACGTacgt&#39;</span><span class="p">),</span> <span class="s1">&#39;</span><span class="se">\n</span><span class="s1">&#39;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+<div class="output_subarea output_stream output_stdout output_text">
+<pre>     A      C      G      T      a      c      g      t 
+
+</pre>
+</div>
+</div>
+</div>
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+<div class="output_subarea output_text output_error">
+<pre>
+<span class="ansi-red-fg">---------------------------------------------------------------------------</span>
+<span class="ansi-red-fg">NameError</span>                                 Traceback (most recent call last)
+<span class="ansi-green-fg">&lt;ipython-input-36-cf76852ec8e7&gt;</span> in <span class="ansi-cyan-fg">&lt;module&gt;</span>
+<span class="ansi-green-intense-fg ansi-bold">      1</span> print<span class="ansi-blue-fg">(</span><span class="ansi-blue-fg">&#39;    &#39;</span><span class="ansi-blue-fg">,</span> <span class="ansi-blue-fg">&#39;      &#39;</span><span class="ansi-blue-fg">.</span>join<span class="ansi-blue-fg">(</span><span class="ansi-blue-fg">&#39;ACGTacgt&#39;</span><span class="ansi-blue-fg">)</span><span class="ansi-blue-fg">,</span> <span class="ansi-blue-fg">&#39;\n&#39;</span><span class="ansi-blue-fg">)</span>
+<span class="ansi-green-fg">----&gt; 2</span><span class="ansi-red-fg"> </span>print<span class="ansi-blue-fg">(</span>model<span class="ansi-blue-fg">)</span>
+
+<span class="ansi-red-fg">NameError</span>: name &#39;model&#39; is not defined</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>It's probably clearer to look at the result as an image:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="k">def</span> <span class="nf">plot_model</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">labels</span><span class="p">,</span> <span class="n">figure</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="n">fig</span> <span class="o">=</span> <span class="n">figure</span> <span class="ow">or</span> <span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">()</span>
+    <span class="n">ax</span> <span class="o">=</span> <span class="n">fig</span><span class="o">.</span><span class="n">add_axes</span><span class="p">([</span><span class="mf">0.1</span><span class="p">,</span> <span class="mf">0.1</span><span class="p">,</span> <span class="mf">0.8</span><span class="p">,</span> <span class="mf">0.8</span><span class="p">])</span>
+    <span class="n">im</span> <span class="o">=</span> <span class="n">ax</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">cmap</span><span class="o">=</span><span class="s1">&#39;magma&#39;</span><span class="p">);</span>
+    <span class="n">axcolor</span> <span class="o">=</span> <span class="n">fig</span><span class="o">.</span><span class="n">add_axes</span><span class="p">([</span><span class="mf">0.91</span><span class="p">,</span> <span class="mf">0.1</span><span class="p">,</span> <span class="mf">0.02</span><span class="p">,</span> <span class="mf">0.8</span><span class="p">])</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">colorbar</span><span class="p">(</span><span class="n">im</span><span class="p">,</span> <span class="n">cax</span><span class="o">=</span><span class="n">axcolor</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">axis</span> <span class="ow">in</span> <span class="p">[</span><span class="n">ax</span><span class="o">.</span><span class="n">xaxis</span><span class="p">,</span> <span class="n">ax</span><span class="o">.</span><span class="n">yaxis</span><span class="p">]:</span>
+        <span class="n">axis</span><span class="o">.</span><span class="n">set_ticks</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="mi">8</span><span class="p">))</span>
+        <span class="n">axis</span><span class="o">.</span><span class="n">set_ticks_position</span><span class="p">(</span><span class="s1">&#39;none&#39;</span><span class="p">)</span>
+        <span class="n">axis</span><span class="o">.</span><span class="n">set_ticklabels</span><span class="p">(</span><span class="n">labels</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">ax</span>
+
+<span class="n">plot_model</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">labels</span><span class="o">=</span><span class="s1">&#39;ACGTacgt&#39;</span><span class="p">);</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+<div class="output_subarea output_text output_error">
+<pre>
+<span class="ansi-red-fg">---------------------------------------------------------------------------</span>
+<span class="ansi-red-fg">NameError</span>                                 Traceback (most recent call last)
+<span class="ansi-green-fg">&lt;ipython-input-37-c53cff9c2888&gt;</span> in <span class="ansi-cyan-fg">&lt;module&gt;</span>
+<span class="ansi-green-intense-fg ansi-bold">     11</span>     <span class="ansi-green-fg">return</span> ax
+<span class="ansi-green-intense-fg ansi-bold">     12</span> 
+<span class="ansi-green-fg">---&gt; 13</span><span class="ansi-red-fg"> </span>plot_model<span class="ansi-blue-fg">(</span>model<span class="ansi-blue-fg">,</span> labels<span class="ansi-blue-fg">=</span><span class="ansi-blue-fg">&#39;ACGTacgt&#39;</span><span class="ansi-blue-fg">)</span><span class="ansi-blue-fg">;</span>
+
+<span class="ansi-red-fg">NameError</span>: name &#39;model&#39; is not defined</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="Transition probability matrix for genetic sequence in the
+*Drosophila melanogaster* genome" -->
+
+<p>Notice how the C-A and G-C transitions are different between the repeat and
+non-repeat parts of the genome. This information can be used to classify
+previously unseen DNA sequence.</p>
+<!-- exercise begin -->
+
+<p><strong>Exercise:</strong> add a step to the start of the pipe to unzip the data so you don't
+have to keep a decompressed version on your hard drive. The Drosophila genome,
+for example, takes less than a third of the space on disk when compressed with
+gzip. And yes, unzipping can be streamed, too!</p>
+<p><em>Hint:</em> The <code>gzip</code> package, part of Python's standard library, allows you
+to open <code>.gz</code> files as if they were normal files.</p>
+<!-- solution begin -->
+
+<p><strong>Solution:</strong> We can replace <code>open</code> in the original <code>genome</code> code with a
+curried version of <code>gzip.open</code>. The default mode of <code>gzip</code>'s <code>open</code> function is
+<code>rb</code> (<strong>r</strong>ead <strong>b</strong>ytes), instead of <code>rt</code> for Python's built-in <code>open</code>
+(<strong>r</strong>ead <strong>t</strong>ext), so we have to provide it.</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">import</span> <span class="nn">gzip</span>
+
+<span class="n">gzopen</span> <span class="o">=</span> <span class="n">tz</span><span class="o">.</span><span class="n">curry</span><span class="p">(</span><span class="n">gzip</span><span class="o">.</span><span class="n">open</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">genome_gz</span><span class="p">(</span><span class="n">file_pattern</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Stream a genome, letter by letter, from a list of FASTA filenames.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">tz</span><span class="o">.</span><span class="n">pipe</span><span class="p">(</span><span class="n">file_pattern</span><span class="p">,</span> <span class="n">glob</span><span class="p">,</span> <span class="nb">sorted</span><span class="p">,</span>  <span class="c1"># Filenames</span>
+                   <span class="n">c</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">gzopen</span><span class="p">(</span><span class="n">mode</span><span class="o">=</span><span class="s1">&#39;rt&#39;</span><span class="p">)),</span>  <span class="c1"># lines</span>
+                   <span class="c1"># concatenate lines from all files:</span>
+                   <span class="n">tz</span><span class="o">.</span><span class="n">concat</span><span class="p">,</span>
+                   <span class="c1"># drop header from each sequence</span>
+                   <span class="n">c</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">is_sequence</span><span class="p">),</span>
+                   <span class="c1"># concatenate characters from all lines</span>
+                   <span class="n">tz</span><span class="o">.</span><span class="n">concat</span><span class="p">,</span>
+                   <span class="c1"># discard newlines and &#39;N&#39;</span>
+                   <span class="n">c</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">is_nucleotide</span><span class="p">))</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>You can try this out with the compressed drosophila genome file:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">dm</span> <span class="o">=</span> <span class="s1">&#39;data/dm6.fa.gz&#39;</span>
+<span class="n">model</span> <span class="o">=</span> <span class="n">tz</span><span class="o">.</span><span class="n">pipe</span><span class="p">(</span><span class="n">dm</span><span class="p">,</span> <span class="n">genome_gz</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">take</span><span class="p">(</span><span class="mi">10</span><span class="o">**</span><span class="mi">7</span><span class="p">),</span> <span class="n">markov</span><span class="p">)</span>
+<span class="n">plot_model</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">labels</span><span class="o">=</span><span class="s1">&#39;ACGTacgt&#39;</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+<div class="output_subarea output_text output_error">
+<pre>
+<span class="ansi-red-fg">---------------------------------------------------------------------------</span>
+<span class="ansi-red-fg">IndexError</span>                                Traceback (most recent call last)
+<span class="ansi-green-fg">&lt;ipython-input-39-79788073bf16&gt;</span> in <span class="ansi-cyan-fg">&lt;module&gt;</span>
+<span class="ansi-green-intense-fg ansi-bold">      1</span> dm <span class="ansi-blue-fg">=</span> <span class="ansi-blue-fg">&#39;data/dm6.fa.gz&#39;</span>
+<span class="ansi-green-fg">----&gt; 2</span><span class="ansi-red-fg"> </span>model <span class="ansi-blue-fg">=</span> tz<span class="ansi-blue-fg">.</span>pipe<span class="ansi-blue-fg">(</span>dm<span class="ansi-blue-fg">,</span> genome_gz<span class="ansi-blue-fg">,</span> c<span class="ansi-blue-fg">.</span>take<span class="ansi-blue-fg">(</span><span class="ansi-cyan-fg">10</span><span class="ansi-blue-fg">**</span><span class="ansi-cyan-fg">7</span><span class="ansi-blue-fg">)</span><span class="ansi-blue-fg">,</span> markov<span class="ansi-blue-fg">)</span>
+<span class="ansi-green-intense-fg ansi-bold">      3</span> plot_model<span class="ansi-blue-fg">(</span>model<span class="ansi-blue-fg">,</span> labels<span class="ansi-blue-fg">=</span><span class="ansi-blue-fg">&#39;ACGTacgt&#39;</span><span class="ansi-blue-fg">)</span>
+
+<span class="ansi-green-fg">~/miniconda3/lib/python3.7/site-packages/toolz/functoolz.py</span> in <span class="ansi-cyan-fg">pipe</span><span class="ansi-blue-fg">(data, *funcs)</span>
+<span class="ansi-green-intense-fg ansi-bold">    632</span>     &#34;&#34;&#34;
+<span class="ansi-green-intense-fg ansi-bold">    633</span>     <span class="ansi-green-fg">for</span> func <span class="ansi-green-fg">in</span> funcs<span class="ansi-blue-fg">:</span>
+<span class="ansi-green-fg">--&gt; 634</span><span class="ansi-red-fg">         </span>data <span class="ansi-blue-fg">=</span> func<span class="ansi-blue-fg">(</span>data<span class="ansi-blue-fg">)</span>
+<span class="ansi-green-intense-fg ansi-bold">    635</span>     <span class="ansi-green-fg">return</span> data
+<span class="ansi-green-intense-fg ansi-bold">    636</span> 
+
+<span class="ansi-green-fg">&lt;ipython-input-33-de502db3ab8b&gt;</span> in <span class="ansi-cyan-fg">markov</span><span class="ansi-blue-fg">(seq)</span>
+<span class="ansi-green-intense-fg ansi-bold">      7</span>                     c<span class="ansi-blue-fg">.</span>sliding_window<span class="ansi-blue-fg">(</span><span class="ansi-cyan-fg">2</span><span class="ansi-blue-fg">)</span><span class="ansi-blue-fg">,</span>        <span class="ansi-red-fg"># each successive tuple</span>
+<span class="ansi-green-intense-fg ansi-bold">      8</span>                     c<span class="ansi-blue-fg">.</span>map<span class="ansi-blue-fg">(</span>PDICT<span class="ansi-blue-fg">.</span>__getitem__<span class="ansi-blue-fg">)</span><span class="ansi-blue-fg">,</span>   <span class="ansi-red-fg"># location in matrix of tuple</span>
+<span class="ansi-green-fg">----&gt; 9</span><span class="ansi-red-fg">                     c.map(increment_model(model))))  # increment matrix
+</span><span class="ansi-green-intense-fg ansi-bold">     10</span>     <span class="ansi-red-fg"># convert counts to transition probability matrix</span>
+<span class="ansi-green-intense-fg ansi-bold">     11</span>     model <span class="ansi-blue-fg">/=</span> np<span class="ansi-blue-fg">.</span>sum<span class="ansi-blue-fg">(</span>model<span class="ansi-blue-fg">,</span> axis<span class="ansi-blue-fg">=</span><span class="ansi-cyan-fg">1</span><span class="ansi-blue-fg">)</span><span class="ansi-blue-fg">[</span><span class="ansi-blue-fg">:</span><span class="ansi-blue-fg">,</span> np<span class="ansi-blue-fg">.</span>newaxis<span class="ansi-blue-fg">]</span>
+
+<span class="ansi-green-fg">~/miniconda3/lib/python3.7/site-packages/toolz/itertoolz.py</span> in <span class="ansi-cyan-fg">last</span><span class="ansi-blue-fg">(seq)</span>
+<span class="ansi-green-intense-fg ansi-bold">    406</span>     <span class="ansi-blue-fg">&#39;C&#39;</span>
+<span class="ansi-green-intense-fg ansi-bold">    407</span>     &#34;&#34;&#34;
+<span class="ansi-green-fg">--&gt; 408</span><span class="ansi-red-fg">     </span><span class="ansi-green-fg">return</span> tail<span class="ansi-blue-fg">(</span><span class="ansi-cyan-fg">1</span><span class="ansi-blue-fg">,</span> seq<span class="ansi-blue-fg">)</span><span class="ansi-blue-fg">[</span><span class="ansi-cyan-fg">0</span><span class="ansi-blue-fg">]</span>
+<span class="ansi-green-intense-fg ansi-bold">    409</span> 
+<span class="ansi-green-intense-fg ansi-bold">    410</span> 
+
+<span class="ansi-red-fg">IndexError</span>: tuple index out of range</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>If you want to have a single <code>genome</code> function, you could write a custom <code>open</code>
+function that decides from filename or from trying and failing whether a file
+is a gzip file.</p>
+<p>Similarly, if you have a <code>.tar.gz</code> full of FASTA files, you can use Python's
+<code>tarfile</code> module instead of <code>glob</code> to read each file individually. The only
+caveat is that you will have to use the <code>bytes.decode</code> function to decode each
+line, as <code>tarfile</code> returns them as bytes, not as text.</p>
+<!-- solution end -->
+
+<!-- exercise end -->
+
+<p>We hope to have shown you at least a hint that streaming in Python can be easy
+when you use a few abstractions, like the ones Toolz provides.</p>
+<p>Streaming can make you more productive, because big data takes linearly longer
+than small data. In batch analysis, big data can take forever to run, because
+the operating system has to keep transferring data from RAM to the hard disk
+and back. Or, Python might refuse altogether and simply show a <code>MemoryError</code>!
+This means that, for many analyses, you don’t need a bigger machine to analyse
+bigger datasets. And, if your tests pass on small data, they’ll pass on big
+data, too!</p>
+<p>Our take home message from this chapter is this: when writing an algorithm, or
+analysis, think about whether you can do it streaming. If you can, just do it
+from the beginning. Your future self will thank you.
+Doing it later is harder, and results in things like this:</p>
+<p><img src="http://bonkersworld.net/img/2012.08.15_all_engineers_are_the_same.png" alt="TODOs in history. Comic by Manu Cornet, http://www.bonkersworld.net/all-engineers-are-the-same/, used with permission."></p>
+
+</div>
+</div>
+</div>
+</div>
+
+ 
+
+
+    </main>
+    

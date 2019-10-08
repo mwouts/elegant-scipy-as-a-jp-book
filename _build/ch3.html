@@ -1,0 +1,2769 @@
+---
+title: |-
+  Networks of Image Regions with ndimage
+prev_page:
+  url: /ch2.html
+  title: |-
+    Quantile Normalization with NumPy and SciPy
+next_page:
+  url: /ch4.html
+  title: |-
+    Frequency and the fast Fourier transform
+suffix: .md
+
+comment: "***PROGRAMMATICALLY GENERATED, DO NOT EDIT. SEE ORIGINAL FILES IN /content***"
+---
+
+    <main class="jupyter-page">
+    <div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<h1 id="Networks-of-Image-Regions-with-ndimage">Networks of Image Regions with ndimage<a class="anchor-link" href="#Networks-of-Image-Regions-with-ndimage"> </a></h1><blockquote><p>Tyger Tyger, burning bright,<br/>
+In the forests of the night;<br/>
+What immortal hand or eye,<br/>
+Could frame thy fearful symmetry?</p>
+<p>— William Blake, <em>The Tyger</em></p>
+</blockquote>
+<p>You probably know that digital images are made up of <em>pixels</em>. Generally, you
+should not think of these as little squares, but as <em>point samples</em> of the light
+signal <em>measured on a regular grid</em> [^alvyraysmith].</p>
+<p>Further, when processing
+images, we often deal with objects much larger than individual pixels.
+In a landscape, the sky, earth, trees, and rocks each span many
+pixels. A common structure to represent these is the Region Adjacency Graph,
+or RAG. Its <em>nodes</em> hold properties of each region in the image, and its
+<em>links</em> hold the spatial relationships between the regions. Two nodes are
+linked whenever their corresponding regions touch each other in the input
+image.</p>
+<p>Building such a structure could be a complicated
+affair, and even more difficult
+when images are not two-dimensional but 3D and even 4D, as is
+common in microscopy, materials science, and climatology, among others. But
+here we will show you how to produce a RAG in a few lines of code using
+NetworkX (a Python library to analyze graphs and networks), and
+a filter from SciPy's N-dimensional image processing submodule, <code>ndimage</code>.</p>
+<blockquote><p><strong>The origins of Elegant SciPy {.callout}</strong></p>
+<p><em>(A note from Juan.)</em></p>
+<p>This chapter gets a special mention because it inspired the whole book.
+Vighnesh Birodkar wrote this code snippet as an undergraduate while
+participating in Google Summer of Code (GSoC) 2014.  When I saw this bit of
+code, it blew me away. For the purposes of this book, it touches on many
+aspects of scientific Python.  By the time you're done with this chapter, you
+should be able to process arrays of <em>any</em> dimension, rather than thinking of
+them only as 1D lists or 2D tables.  More than that, you'll understand the
+basics of image filtering and network processing.</p>
+</blockquote>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">import</span> <span class="nn">networkx</span> <span class="k">as</span> <span class="nn">nx</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">from</span> <span class="nn">scipy</span> <span class="k">import</span> <span class="n">ndimage</span> <span class="k">as</span> <span class="n">nd</span>
+
+<span class="k">def</span> <span class="nf">add_edge_filter</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">graph</span><span class="p">):</span>
+    <span class="n">center</span> <span class="o">=</span> <span class="n">values</span><span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="n">values</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span><span class="p">]</span>
+    <span class="k">for</span> <span class="n">neighbor</span> <span class="ow">in</span> <span class="n">values</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">neighbor</span> <span class="o">!=</span> <span class="n">center</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">graph</span><span class="o">.</span><span class="n">has_edge</span><span class="p">(</span><span class="n">center</span><span class="p">,</span> <span class="n">neighbor</span><span class="p">):</span>
+            <span class="n">graph</span><span class="o">.</span><span class="n">add_edge</span><span class="p">(</span><span class="n">center</span><span class="p">,</span> <span class="n">neighbor</span><span class="p">)</span>
+    <span class="k">return</span> <span class="mf">0.0</span>
+
+
+<span class="k">def</span> <span class="nf">build_rag</span><span class="p">(</span><span class="n">labels</span><span class="p">,</span> <span class="n">image</span><span class="p">):</span>
+    <span class="n">g</span> <span class="o">=</span> <span class="n">nx</span><span class="o">.</span><span class="n">Graph</span><span class="p">()</span>
+    <span class="n">footprint</span> <span class="o">=</span> <span class="n">ndi</span><span class="o">.</span><span class="n">generate_binary_structure</span><span class="p">(</span><span class="n">labels</span><span class="o">.</span><span class="n">ndim</span><span class="p">,</span> <span class="n">connectivity</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">_</span> <span class="o">=</span> <span class="n">ndi</span><span class="o">.</span><span class="n">generic_filter</span><span class="p">(</span><span class="n">labels</span><span class="p">,</span> <span class="n">add_edge_filter</span><span class="p">,</span> <span class="n">footprint</span><span class="o">=</span><span class="n">footprint</span><span class="p">,</span>
+                           <span class="n">mode</span><span class="o">=</span><span class="s1">&#39;nearest&#39;</span><span class="p">,</span> <span class="n">extra_arguments</span><span class="o">=</span><span class="p">(</span><span class="n">g</span><span class="p">,))</span>
+    <span class="k">return</span> <span class="n">g</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>There are a few things going on here: images being represented as numpy arrays,
+<em>filtering</em> of these images using <code>scipy.ndimage</code>, and building of the image
+regions into a graph (network) using the NetworkX library. We'll go over these
+in turn.</p>
+<h2 id="Images-are-just-numpy-arrays">Images are just numpy arrays<a class="anchor-link" href="#Images-are-just-numpy-arrays"> </a></h2><p>In the previous chapter, we saw that numpy arrays can efficiently represent
+tabular data, and are a convenient way to perform computations on it.
+It turns out that arrays are equally adept at representing images.</p>
+<p>Here's how to create an image of white noise using just numpy, and display it
+with matplotlib. First, we import the necessary packages, and use the
+<code>matplotlib inline</code> IPython magic to make our images appear below the code:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="c1"># Make plots appear inline, set custom plotting style</span>
+<span class="o">%</span><span class="k">matplotlib</span> inline
+<span class="kn">import</span> <span class="nn">matplotlib.pyplot</span> <span class="k">as</span> <span class="nn">plt</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">style</span><span class="o">.</span><span class="n">use</span><span class="p">(</span><span class="s1">&#39;style/elegant.mplstyle&#39;</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Then, we "make some noise" and display it as an image:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="n">random_image</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="mi">500</span><span class="p">,</span> <span class="mi">500</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">random_image</span><span class="p">);</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch3_5_0.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="Image displayed by matplotlib's `imshow`" -->
+
+<p>This <code>imshow</code> function displays a numpy array as an image. The converse is also true: an image
+can be considered as a numpy array. For this example we use the scikit-image
+library, a collection of image processing tools built on top of NumPy and SciPy.</p>
+<p>Here is a PNG image from the scikit-image repository. It is a black and white
+(sometimes called "grayscale") picture of some ancient Roman coins from
+Pompeii, obtained from the Brooklyn Museum [^coins-source]:</p>
+<p><img src="https://raw.githubusercontent.com/scikit-image/scikit-image/v0.10.1/skimage/data/coins.png" alt="Coins image from the Brooklyn Museum"></p>
+<p>Here is the coin image loaded with scikit-image:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">from</span> <span class="nn">skimage</span> <span class="k">import</span> <span class="n">io</span>
+<span class="n">url_coins</span> <span class="o">=</span> <span class="p">(</span><span class="s1">&#39;https://raw.githubusercontent.com/scikit-image/scikit-image/&#39;</span>
+             <span class="s1">&#39;v0.10.1/skimage/data/coins.png&#39;</span><span class="p">)</span>
+<span class="n">coins</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">imread</span><span class="p">(</span><span class="n">url_coins</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Type:&quot;</span><span class="p">,</span> <span class="nb">type</span><span class="p">(</span><span class="n">coins</span><span class="p">),</span> <span class="s2">&quot;Shape:&quot;</span><span class="p">,</span> <span class="n">coins</span><span class="o">.</span><span class="n">shape</span><span class="p">,</span> <span class="s2">&quot;Data type:&quot;</span><span class="p">,</span> <span class="n">coins</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">coins</span><span class="p">);</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+<div class="output_subarea output_stream output_stdout output_text">
+<pre>Type: &lt;class &#39;imageio.core.util.Array&#39;&gt; Shape: (303, 384) Data type: uint8
+</pre>
+</div>
+</div>
+</div>
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch3_7_1.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="Array corresponding to coins image, displayed with matplotlib" -->
+
+<p>A grayscale image can be represented as a <em>2-dimensional array</em>, with each array
+element containing the grayscale intensity at that position. So, <strong>an image is
+just a numpy array</strong>.</p>
+<p>Color images are a <em>3-dimensional</em> array, where the first two dimensions
+represent the spatial positions of the image, while the final dimension represents
+color channels, typically the three primary additive colors of red, green, and blue.
+To show what we can do with these dimensions, let's play with this photo of astronaut Eileen Collins:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">url_astronaut</span> <span class="o">=</span> <span class="p">(</span><span class="s1">&#39;https://raw.githubusercontent.com/scikit-image/scikit-image/&#39;</span>
+                 <span class="s1">&#39;master/skimage/data/astronaut.png&#39;</span><span class="p">)</span>
+<span class="n">astro</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">imread</span><span class="p">(</span><span class="n">url_astronaut</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Type:&quot;</span><span class="p">,</span> <span class="nb">type</span><span class="p">(</span><span class="n">astro</span><span class="p">),</span> <span class="s2">&quot;Shape:&quot;</span><span class="p">,</span> <span class="n">astro</span><span class="o">.</span><span class="n">shape</span><span class="p">,</span> <span class="s2">&quot;Data type:&quot;</span><span class="p">,</span> <span class="n">astro</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">astro</span><span class="p">);</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+<div class="output_subarea output_stream output_stdout output_text">
+<pre>Type: &lt;class &#39;imageio.core.util.Array&#39;&gt; Shape: (512, 512, 3) Data type: uint8
+</pre>
+</div>
+</div>
+</div>
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch3_9_1.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="Image of astronaut Eileen Collins" -->
+
+<p>This image is <em>just numpy arrays</em>. Adding a green square to the image is easy
+once you realize this, using simple numpy slicing:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">astro_sq</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="n">astro</span><span class="p">)</span>
+<span class="n">astro_sq</span><span class="p">[</span><span class="mi">50</span><span class="p">:</span><span class="mi">100</span><span class="p">,</span> <span class="mi">50</span><span class="p">:</span><span class="mi">100</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">255</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span>  <span class="c1"># red, green, blue</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">astro_sq</span><span class="p">);</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch3_11_0.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="Modified image of Eileen Collins" -->
+
+<p>You can also use a boolean <em>mask</em>, an array of <code>True</code> or <code>False</code> values.
+We saw these in Chapter 2 as a way to select rows of a table. In this case, we
+can use an array of the same shape as the image to select pixels:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">astro_sq</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="n">astro</span><span class="p">)</span>
+<span class="n">sq_mask</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">astro</span><span class="o">.</span><span class="n">shape</span><span class="p">[:</span><span class="mi">2</span><span class="p">],</span> <span class="nb">bool</span><span class="p">)</span>
+<span class="n">sq_mask</span><span class="p">[</span><span class="mi">50</span><span class="p">:</span><span class="mi">100</span><span class="p">,</span> <span class="mi">50</span><span class="p">:</span><span class="mi">100</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
+<span class="n">astro_sq</span><span class="p">[</span><span class="n">sq_mask</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">255</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">astro_sq</span><span class="p">);</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch3_13_0.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="Another modified image of Eileen Collins" -->
+
+<!-- exercise begin -->
+
+<p><strong>Exercise:</strong> We just saw how to select a square and paint it green. Can you
+extend that to other shapes and colors? Create a function to draw a blue grid
+onto a color image, and apply it to the <code>astronaut</code> image of Eileen Collins
+(above). Your function should take
+two parameters: the input image, and the grid spacing.
+Use the following template to help you get started.</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="k">def</span> <span class="nf">overlay_grid</span><span class="p">(</span><span class="n">image</span><span class="p">,</span> <span class="n">spacing</span><span class="o">=</span><span class="mi">128</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Return an image with a grid overlay, using the provided spacing.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    image : array, shape (M, N, 3)</span>
+<span class="sd">        The input image.</span>
+<span class="sd">    spacing : int</span>
+<span class="sd">        The spacing between the grid lines.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    image_gridded : array, shape (M, N, 3)</span>
+<span class="sd">        The original image with a blue grid superimposed.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">image_gridded</span> <span class="o">=</span> <span class="n">image</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="k">pass</span>  <span class="c1"># replace this line with your code...</span>
+    <span class="k">return</span> <span class="n">image_gridded</span>
+
+<span class="c1"># plt.imshow(overlay_grid(astro, 128)); # uncomment this line to test your function</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- solution begin -->
+
+<p><strong>Solution:</strong> We can use numpy slicing to select the rows of the grid, set them
+to blue, and then select the columns, and set them to blue as well:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="k">def</span> <span class="nf">overlay_grid</span><span class="p">(</span><span class="n">image</span><span class="p">,</span> <span class="n">spacing</span><span class="o">=</span><span class="mi">128</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Return an image with a grid overlay, using the provided spacing.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    image : array, shape (M, N, 3)</span>
+<span class="sd">        The input image.</span>
+<span class="sd">    spacing : int</span>
+<span class="sd">        The spacing between the grid lines.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    image_gridded : array, shape (M, N, 3)</span>
+<span class="sd">        The original image with a blue grid superimposed.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">image_gridded</span> <span class="o">=</span> <span class="n">image</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="n">image_gridded</span><span class="p">[</span><span class="n">spacing</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">:</span><span class="n">spacing</span><span class="p">,</span> <span class="p">:]</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">255</span><span class="p">]</span>
+    <span class="n">image_gridded</span><span class="p">[:,</span> <span class="n">spacing</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">:</span><span class="n">spacing</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">255</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">image_gridded</span>
+
+<span class="n">plt</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">overlay_grid</span><span class="p">(</span><span class="n">astro</span><span class="p">,</span> <span class="mi">128</span><span class="p">));</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch3_17_0.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="Astronaut image overlaid with a grid" -->
+
+<p>Note that we used <code>-1</code> to mean the last value of the axis, as is standard in
+Python indexing. You can omit this value, but the meaning is slightly
+different. Without it (i.e. <code>spacing::spacing</code>), you go all the way to the end
+of the array, including the final row/column. When you use it as the stop
+index, you prevent the final row from being selected. In the case of a grid
+overlay, this is probably the desired behavior.</p>
+<!-- solution end -->
+
+<!-- exercise end -->
+
+<h2 id="Filters-in-signal-processing">Filters in signal processing<a class="anchor-link" href="#Filters-in-signal-processing"> </a></h2><p>Filtering is one of the most fundamental and common operations in image
+processing. You can filter an image to remove noise, to enhance features, or to
+detect edges between objects in the image.</p>
+<p>To understand filters, it's easiest to start with a 1D signal, instead of an image. For
+example, you might measure the light arriving at your end of a fiber-optic cable.
+If you <em>sample</em> the signal every millisecond (ms) for 100ms, you end up with an
+array of length 100. Suppose that after 30ms the light signal is turned on, and
+30ms later, it is switched off. You end up with a signal like this:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">sig</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="mi">100</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">float</span><span class="p">)</span> <span class="c1">#</span>
+<span class="n">sig</span><span class="p">[</span><span class="mi">30</span><span class="p">:</span><span class="mi">60</span><span class="p">]</span> <span class="o">=</span> <span class="mi">1</span>  <span class="c1"># signal = 1 during the period 30-60ms because light is observed</span>
+<span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">()</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">sig</span><span class="p">);</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_ylim</span><span class="p">(</span><span class="o">-</span><span class="mf">0.1</span><span class="p">,</span> <span class="mf">1.1</span><span class="p">);</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch3_19_0.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="Step signal" -->
+
+<p>To find <em>when</em> the light is turned on, you can <em>delay</em> it by 1ms, then
+<em>subtract</em> the original from the delayed signal. This way, when the signal is
+unchanged from one millisecond to the next, the subtraction will give zero,
+but when the signal <em>increases</em>, you will get a positive signal.</p>
+<p>When the signal <em>decreases</em>, we will get a negative signal. If we are
+only interested in pinpointing the time when the light was turned on, we can
+<em>clip</em> the difference signal, so that any negative values are converted to 0.</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">sigdelta</span> <span class="o">=</span> <span class="n">sig</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>  <span class="c1"># sigdelta[0] equals sig[1], and so on</span>
+<span class="n">sigdiff</span> <span class="o">=</span> <span class="n">sigdelta</span> <span class="o">-</span> <span class="n">sig</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+<span class="n">sigon</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">sigdiff</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">inf</span><span class="p">)</span>
+<span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">()</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">sigon</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_ylim</span><span class="p">(</span><span class="o">-</span><span class="mf">0.1</span><span class="p">,</span> <span class="mf">1.1</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s1">&#39;Signal on at:&#39;</span><span class="p">,</span> <span class="mi">1</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">flatnonzero</span><span class="p">(</span><span class="n">sigon</span><span class="p">)[</span><span class="mi">0</span><span class="p">],</span> <span class="s1">&#39;ms&#39;</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+<div class="output_subarea output_stream output_stdout output_text">
+<pre>Signal on at: 30 ms
+</pre>
+</div>
+</div>
+</div>
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch3_21_1.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="Shifted difference of a step signal" -->
+
+<p>(Here we have used NumPy's <code>flatnonzero</code> function to get the first index where
+the <code>sigon</code> array is not equal to 0.)</p>
+<p>It turns out that this can be accomplished by an signal processing operation
+called <em>convolution</em>. At every point of the signal, we compute the dot-product
+between the values surrounding that point and a <em>kernel</em> or <em>filter</em>, which is a
+predetermined vector of values. Depending on the kernel, then, the convolution
+shows a different feature of the signal.</p>
+<p>Now, think of what happens when the kernel is (1, 0, -1), the difference
+filter, for a signal <code>s</code>. At any position <code>i</code>, the convolution result is
+<code>1*s[i+1] + 0*s[i] - 1*s[i-1]</code>, that is, <code>s[i+1] - s[i-1]</code>.
+Thus, when the values adjacent to <code>s[i]</code> are identical, the convolution gives 0, but when
+<code>s[i+1] &gt; s[i-1]</code> (the signal is increasing), it gives a positive value, and,
+conversely, when <code>s[i+1] &lt; s[i-1]</code>, it gives a negative value. You can think
+of this as an estimate of the derivative of the input function.</p>
+<p>In general, the formula for convolution is:
+$s'(t) = \sum_{j=t-\tau}^{t}{s(j)f(t-j)}$
+where $s$ is the signal, $s'$ is the filtered signal, $f$ is the filter, and
+$\tau$ is the length of the filter.</p>
+<p>In scipy, you can use the <code>scipy.ndimage.convolve</code> to work on this.</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">diff</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+<span class="kn">from</span> <span class="nn">scipy</span> <span class="k">import</span> <span class="n">ndimage</span> <span class="k">as</span> <span class="n">ndi</span>
+<span class="n">dsig</span> <span class="o">=</span> <span class="n">ndi</span><span class="o">.</span><span class="n">convolve</span><span class="p">(</span><span class="n">sig</span><span class="p">,</span> <span class="n">diff</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">dsig</span><span class="p">);</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch3_23_0.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="Result of convolving a difference filter with a step signal" -->
+
+<p>Signals are usually <em>noisy</em> though, not perfect as above:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">sig</span> <span class="o">=</span> <span class="n">sig</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">normal</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mf">0.3</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="n">sig</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">sig</span><span class="p">);</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch3_25_0.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="Step signal corrupted by noise" -->
+
+<p>The plain difference filter can amplify that noise:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">ndi</span><span class="o">.</span><span class="n">convolve</span><span class="p">(</span><span class="n">sig</span><span class="p">,</span> <span class="n">diff</span><span class="p">));</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch3_27_0.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="Difference filtering of a noisy signal" -->
+
+<p>In such cases, you can add smoothing to the filter. The most common form of
+smoothing is <em>Gaussian</em> smoothing, which takes the weighted average of
+neighboring points in the signal using the
+<a href="https://en.wikipedia.org/wiki/Gaussian_function">Gaussian function</a>. We can
+write a function to make a Gaussian smoothing kernel as follows:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="k">def</span> <span class="nf">gaussian_kernel</span><span class="p">(</span><span class="n">size</span><span class="p">,</span> <span class="n">sigma</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Make a 1D Gaussian kernel of the specified size and standard deviation.</span>
+
+<span class="sd">    The size should be an odd number and at least ~6 times greater than sigma</span>
+<span class="sd">    to ensure sufficient coverage.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">positions</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">size</span><span class="p">)</span> <span class="o">-</span> <span class="n">size</span> <span class="o">//</span> <span class="mi">2</span>
+    <span class="n">kernel_raw</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="n">positions</span><span class="o">**</span><span class="mi">2</span> <span class="o">/</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">sigma</span><span class="o">**</span><span class="mi">2</span><span class="p">))</span>
+    <span class="n">kernel_normalized</span> <span class="o">=</span> <span class="n">kernel_raw</span> <span class="o">/</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">kernel_raw</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">kernel_normalized</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>A really nice feature feature of convolution is that it's <em>associative</em>,
+meaning if you want to find the derivative of the smoothed signal, you can
+equivalently convolve the signal with the smoothed difference filter! This can
+save a lot of computation time, because you can smooth just the filter, which
+is usually much smaller than the data.</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">smooth_diff</span> <span class="o">=</span> <span class="n">ndi</span><span class="o">.</span><span class="n">convolve</span><span class="p">(</span><span class="n">gaussian_kernel</span><span class="p">(</span><span class="mi">25</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="n">diff</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">smooth_diff</span><span class="p">);</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch3_31_0.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="Smoothed difference filter" -->
+
+<p>This smoothed difference filter looks for an edge in the central position,
+but also for that difference to continue. This continuation happens in the case
+of a true
+edge, but not in "spurious" edges caused by noise. Check out the result:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">sdsig</span> <span class="o">=</span> <span class="n">ndi</span><span class="o">.</span><span class="n">convolve</span><span class="p">(</span><span class="n">sig</span><span class="p">,</span> <span class="n">smooth_diff</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">sdsig</span><span class="p">);</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch3_33_0.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="Smoothed difference filter applied to a noisy signal" -->
+
+<p>Although it still looks wobbly, the <em>signal-to-noise ratio</em> (SNR),
+is much greater in this version than when using the simple difference filter.</p>
+<blockquote><p><strong>A note about filtering</strong> {.callout}</p>
+<p>This operation is called filtering because, in physical electrical circuits,
+many of these operations are implemented by hardware that allows certain
+kinds of current through, while blocking others; these hardware components
+are called filters. For example, a common filter that removes high-frequency
+voltage fluctuations from a current is called a <em>low-pass filter</em>.</p>
+</blockquote>
+<h2 id="Filtering-images-(2D-filters)">Filtering images (2D filters)<a class="anchor-link" href="#Filtering-images-(2D-filters)"> </a></h2><p>Now that you've seen filtering in 1D, we hope you'll find it straightforward to
+extend these concepts to 2D signals, such as images. Here's a 2D difference
+filter for finding the edges in the coins image:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">coins</span> <span class="o">=</span> <span class="n">coins</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">float</span><span class="p">)</span> <span class="o">/</span> <span class="mi">255</span>  <span class="c1"># prevents overflow errors</span>
+<span class="n">diff2d</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">]])</span>
+<span class="n">coins_edges</span> <span class="o">=</span> <span class="n">ndi</span><span class="o">.</span><span class="n">convolve</span><span class="p">(</span><span class="n">coins</span><span class="p">,</span> <span class="n">diff2d</span><span class="p">)</span>
+<span class="n">io</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">coins_edges</span><span class="p">);</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch3_35_0.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="Result of a 2D difference filter applied to the coins image" -->
+
+<p>The principle is the same as the 1D filter: at every point in the image, place the
+filter, compute the dot-product of the filter's values with the image values, and
+place the result at the same location in the output image. And, as with the 1D
+difference filter, when the filter is placed on a location with little variation, the
+dot-product cancels out to zero, whereas, placed on a location where the
+image brightness is changing, the values multiplied by 1 will be different from
+those multiplied by -1, and the filtered output will be a positive or negative
+value (depending on whether the image is brighter towards the bottom-right
+or top-left at that point).</p>
+<p>Just as with the 1D filter, you can get more sophisticated and smooth out
+noise right within the filter. The <em>Sobel</em> filter is designed to do just that.
+It comes in horizontal and vertical varieties, to find edges with that
+orientation in the data.
+Let's start with the horizontal filter first.
+To find a horizontal edge in a picture, you might try the following filter:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="c1"># column vector (vertical) to find horizontal edges</span>
+<span class="n">hdiff</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([[</span><span class="mi">1</span><span class="p">],</span> <span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]])</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>However, as we saw with 1D filters, this will result in a noisy estimate of the
+edges in the image. But rather than using Gaussian smoothing, which can cause
+blurry edges, the Sobel filter uses the property that edges in images tend to
+be continuous: a picture of the ocean, for example, will contain a horizontal
+edge along an entire line, not just at specific points of the image. So the
+Sobel filter smooths the vertical filter horizontally: it looks for a strong
+edge at the central position that is corroborated by the adjacent positions:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">hsobel</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([[</span> <span class="mi">1</span><span class="p">,</span>  <span class="mi">2</span><span class="p">,</span>  <span class="mi">1</span><span class="p">],</span>
+                   <span class="p">[</span> <span class="mi">0</span><span class="p">,</span>  <span class="mi">0</span><span class="p">,</span>  <span class="mi">0</span><span class="p">],</span>
+                   <span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">]])</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>The vertical Sobel filter is simply the transpose of the horizontal:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">vsobel</span> <span class="o">=</span> <span class="n">hsobel</span><span class="o">.</span><span class="n">T</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>We can then find the horizontal and vertical edges in the coins image:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="c1"># Some custom x-axis labelling to make our plots easier to read</span>
+<span class="k">def</span> <span class="nf">reduce_xaxis_labels</span><span class="p">(</span><span class="n">ax</span><span class="p">,</span> <span class="n">factor</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Show only every ith label to prevent crowding on x-axis</span>
+<span class="sd">        e.g. factor = 2 would plot every second x-axis label,</span>
+<span class="sd">        starting at the first.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    ax : matplotlib plot axis to be adjusted</span>
+<span class="sd">    factor : int, factor to reduce the number of x-axis labels by</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">setp</span><span class="p">(</span><span class="n">ax</span><span class="o">.</span><span class="n">xaxis</span><span class="o">.</span><span class="n">get_ticklabels</span><span class="p">(),</span> <span class="n">visible</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">label</span> <span class="ow">in</span> <span class="n">ax</span><span class="o">.</span><span class="n">xaxis</span><span class="o">.</span><span class="n">get_ticklabels</span><span class="p">()[::</span><span class="n">factor</span><span class="p">]:</span>
+        <span class="n">label</span><span class="o">.</span><span class="n">set_visible</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
+
+
+<span class="n">coins_h</span> <span class="o">=</span> <span class="n">ndi</span><span class="o">.</span><span class="n">convolve</span><span class="p">(</span><span class="n">coins</span><span class="p">,</span> <span class="n">hsobel</span><span class="p">)</span>
+<span class="n">coins_v</span> <span class="o">=</span> <span class="n">ndi</span><span class="o">.</span><span class="n">convolve</span><span class="p">(</span><span class="n">coins</span><span class="p">,</span> <span class="n">vsobel</span><span class="p">)</span>
+
+<span class="n">fig</span><span class="p">,</span> <span class="n">axes</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="n">nrows</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">ncols</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+<span class="n">axes</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">coins_h</span><span class="p">,</span> <span class="n">cmap</span><span class="o">=</span><span class="n">plt</span><span class="o">.</span><span class="n">cm</span><span class="o">.</span><span class="n">RdBu</span><span class="p">)</span>
+<span class="n">axes</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">coins_v</span><span class="p">,</span> <span class="n">cmap</span><span class="o">=</span><span class="n">plt</span><span class="o">.</span><span class="n">cm</span><span class="o">.</span><span class="n">RdBu</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">ax</span> <span class="ow">in</span> <span class="n">axes</span><span class="p">:</span>
+    <span class="n">reduce_xaxis_labels</span><span class="p">(</span><span class="n">ax</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch3_43_0.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="Directional Sobel filters applied to the coins image" -->
+
+<p>And finally, just like the Pythagorean theorem, you can argue that the edge
+magnitude in <em>any</em> direction is equal to the square root of the sum of squares
+of the horizontal and vertical components:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">coins_sobel</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">coins_h</span><span class="o">**</span><span class="mi">2</span> <span class="o">+</span> <span class="n">coins_v</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">coins_sobel</span><span class="p">,</span> <span class="n">cmap</span><span class="o">=</span><span class="s1">&#39;viridis&#39;</span><span class="p">);</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch3_45_0.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="Sobel gradient magnitude of the coins image" -->
+
+<h2 id="Generic-filters:-arbitrary-functions-of-neighborhood-values">Generic filters: arbitrary functions of neighborhood values<a class="anchor-link" href="#Generic-filters:-arbitrary-functions-of-neighborhood-values"> </a></h2><p>In addition to dot-products, implemented by <code>ndi.convolve</code>, SciPy lets you
+define a filter that is an <em>arbitrary function</em> of the points in a neighborhood,
+implemented in <code>ndi.generic_filter</code>. This can let you express arbitrarily
+complex filters.</p>
+<p>For example, suppose an image represents median house values in a county,
+with a 100m x 100m resolution. The local council decides to tax house sales as
+&#36;10,000 plus 5% of the 90th percentile of house prices in a 1km radius. (So,
+selling a house in an expensive neighborhood costs more.) With
+<code>generic_filter</code>, we can produce the map of the tax rate everywhere in the map:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">from</span> <span class="nn">skimage</span> <span class="k">import</span> <span class="n">morphology</span>
+<span class="k">def</span> <span class="nf">tax</span><span class="p">(</span><span class="n">prices</span><span class="p">):</span>
+    <span class="k">return</span> <span class="mi">10000</span> <span class="o">+</span> <span class="mf">0.05</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">percentile</span><span class="p">(</span><span class="n">prices</span><span class="p">,</span> <span class="mi">90</span><span class="p">)</span>
+<span class="n">house_price_map</span> <span class="o">=</span> <span class="p">(</span><span class="mf">0.5</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="mi">100</span><span class="p">,</span> <span class="mi">100</span><span class="p">))</span> <span class="o">*</span> <span class="mf">1e6</span>
+<span class="n">footprint</span> <span class="o">=</span> <span class="n">morphology</span><span class="o">.</span><span class="n">disk</span><span class="p">(</span><span class="n">radius</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+<span class="n">tax_rate_map</span> <span class="o">=</span> <span class="n">ndi</span><span class="o">.</span><span class="n">generic_filter</span><span class="p">(</span><span class="n">house_price_map</span><span class="p">,</span> <span class="n">tax</span><span class="p">,</span> <span class="n">footprint</span><span class="o">=</span><span class="n">footprint</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">tax_rate_map</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">colorbar</span><span class="p">();</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch3_47_0.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="Generic filter applied to a random image" -->
+
+<!-- exercise begin -->
+
+<p><strong>Exercise:</strong> Conway's Game of Life.</p>
+<p>Suggested by Nicolas Rougier.</p>
+<p>Conway's <a href="https://en.wikipedia.org/wiki/Conway%27s_Game_of_Life">Game of Life</a> is a
+seemingly simple construct in which "cells" on a regular square grid live or die
+according to the cells in their immediate surroundings. At every timestep, we
+determine the state of position (i, j) according to its previous state and that
+of its 8 neighbors (above, below, left, right, and diagonals):</p>
+<ul>
+<li>a live cell with only one live neighbor or none dies.</li>
+<li>a live cell with two or three live neighbors lives on for another generation.</li>
+<li>a live cell with four or more live neighbors dies, as if from overpopulation.</li>
+<li>a dead cell with exactly three live neighbors becomes alive, as if by
+reproduction.</li>
+</ul>
+<p>Although the rules sound like a contrived math problem, they in fact give rise
+to incredible patterns, starting with gliders (small patterns of live cells
+that slowly move in each generation) and glider guns (stationary patterns that
+sprout off gliders), all the way up to prime number generator machines (see,
+for example,
+<a href="http://www.njohnston.ca/2009/08/generating-sequences-of-primes-in-conways-game-of-life/">this page</a>),
+and even
+<a href="https://www.youtube.com/watch?v=xP5-iIeKXE8">simulating Game of Life itself</a>!</p>
+<p>Can you implement the Game of Life using <code>ndi.generic_filter</code>?</p>
+<!-- solution begin -->
+
+<p><strong>Solution:</strong></p>
+<p>Nicolas Rougier (@rougier) provides a NumPy-only solution on his 100 NumPy
+Exercises page (Exercise #79):</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="k">def</span> <span class="nf">next_generation</span><span class="p">(</span><span class="n">Z</span><span class="p">):</span>
+    <span class="n">N</span> <span class="o">=</span> <span class="p">(</span><span class="n">Z</span><span class="p">[</span><span class="mi">0</span><span class="p">:</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span><span class="mi">0</span><span class="p">:</span><span class="o">-</span><span class="mi">2</span><span class="p">]</span> <span class="o">+</span> <span class="n">Z</span><span class="p">[</span><span class="mi">0</span><span class="p">:</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span><span class="mi">1</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="n">Z</span><span class="p">[</span><span class="mi">0</span><span class="p">:</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span><span class="mi">2</span><span class="p">:]</span> <span class="o">+</span>
+         <span class="n">Z</span><span class="p">[</span><span class="mi">1</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span><span class="mi">0</span><span class="p">:</span><span class="o">-</span><span class="mi">2</span><span class="p">]</span>                <span class="o">+</span> <span class="n">Z</span><span class="p">[</span><span class="mi">1</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span><span class="mi">2</span><span class="p">:]</span> <span class="o">+</span>
+         <span class="n">Z</span><span class="p">[</span><span class="mi">2</span><span class="p">:</span>  <span class="p">,</span><span class="mi">0</span><span class="p">:</span><span class="o">-</span><span class="mi">2</span><span class="p">]</span> <span class="o">+</span> <span class="n">Z</span><span class="p">[</span><span class="mi">2</span><span class="p">:</span>  <span class="p">,</span><span class="mi">1</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="n">Z</span><span class="p">[</span><span class="mi">2</span><span class="p">:</span>  <span class="p">,</span><span class="mi">2</span><span class="p">:])</span>
+
+    <span class="c1"># Apply rules</span>
+    <span class="n">birth</span> <span class="o">=</span> <span class="p">(</span><span class="n">N</span><span class="o">==</span><span class="mi">3</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">Z</span><span class="p">[</span><span class="mi">1</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">==</span><span class="mi">0</span><span class="p">)</span>
+    <span class="n">survive</span> <span class="o">=</span> <span class="p">((</span><span class="n">N</span><span class="o">==</span><span class="mi">2</span><span class="p">)</span> <span class="o">|</span> <span class="p">(</span><span class="n">N</span><span class="o">==</span><span class="mi">3</span><span class="p">))</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">Z</span><span class="p">[</span><span class="mi">1</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">==</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">Z</span><span class="p">[</span><span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">Z</span><span class="p">[</span><span class="mi">1</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">][</span><span class="n">birth</span> <span class="o">|</span> <span class="n">survive</span><span class="p">]</span> <span class="o">=</span> <span class="mi">1</span>
+    <span class="k">return</span> <span class="n">Z</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Then we can start a board with:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">random_board</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="p">(</span><span class="mi">50</span><span class="p">,</span> <span class="mi">50</span><span class="p">))</span>
+<span class="n">n_generations</span> <span class="o">=</span> <span class="mi">100</span>
+<span class="k">for</span> <span class="n">generation</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_generations</span><span class="p">):</span>
+    <span class="n">random_board</span> <span class="o">=</span> <span class="n">next_generation</span><span class="p">(</span><span class="n">random_board</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Using generic filter makes it even easier:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="k">def</span> <span class="nf">nextgen_filter</span><span class="p">(</span><span class="n">values</span><span class="p">):</span>
+    <span class="n">center</span> <span class="o">=</span> <span class="n">values</span><span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="n">values</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span><span class="p">]</span>
+    <span class="n">neighbors_count</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">values</span><span class="p">)</span> <span class="o">-</span> <span class="n">center</span>
+    <span class="k">if</span> <span class="n">neighbors_count</span> <span class="o">==</span> <span class="mi">3</span> <span class="ow">or</span> <span class="p">(</span><span class="n">center</span> <span class="ow">and</span> <span class="n">neighbors_count</span> <span class="o">==</span> <span class="mi">2</span><span class="p">):</span>
+        <span class="k">return</span> <span class="mf">1.</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mf">0.</span>
+
+<span class="k">def</span> <span class="nf">next_generation</span><span class="p">(</span><span class="n">board</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">ndi</span><span class="o">.</span><span class="n">generic_filter</span><span class="p">(</span><span class="n">board</span><span class="p">,</span> <span class="n">nextgen_filter</span><span class="p">,</span>
+                              <span class="n">size</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s1">&#39;constant&#39;</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>The nice thing is that some formulations of the Game of Life use what's known
+as a <em>toroidal board</em>, which means that the left and right ends "wrap around"
+and connect to each other, as well as the top and bottom ends. With
+<code>generic_filter</code>, it's trivial to modify our solution to incorporate this:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="k">def</span> <span class="nf">next_generation_toroidal</span><span class="p">(</span><span class="n">board</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">ndi</span><span class="o">.</span><span class="n">generic_filter</span><span class="p">(</span><span class="n">board</span><span class="p">,</span> <span class="n">nextgen_filter</span><span class="p">,</span>
+                              <span class="n">size</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s1">&#39;wrap&#39;</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>We can now simulate this toroidal board for a few generations:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">random_board</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="p">(</span><span class="mi">50</span><span class="p">,</span> <span class="mi">50</span><span class="p">))</span>
+<span class="n">n_generations</span> <span class="o">=</span> <span class="mi">100</span>
+<span class="k">for</span> <span class="n">generation</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_generations</span><span class="p">):</span>
+    <span class="n">random_board</span> <span class="o">=</span> <span class="n">next_generation_toroidal</span><span class="p">(</span><span class="n">random_board</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- solution end -->
+
+<!-- exercise end -->
+
+<!-- exercise begin -->
+
+<p><strong>Exercise:</strong> Sobel gradient magnitude.</p>
+<p>Above, we saw how we can combine the output of two different filters, the
+horizontal Sobel filter, and the vertical one. Can you write a function that
+does this in a single pass using <code>ndi.generic_filter</code>?</p>
+<!-- solution begin -->
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">hsobel</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([[</span> <span class="mi">1</span><span class="p">,</span>  <span class="mi">2</span><span class="p">,</span>  <span class="mi">1</span><span class="p">],</span>
+                   <span class="p">[</span> <span class="mi">0</span><span class="p">,</span>  <span class="mi">0</span><span class="p">,</span>  <span class="mi">0</span><span class="p">],</span>
+                   <span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">]])</span>
+
+<span class="n">vsobel</span> <span class="o">=</span> <span class="n">hsobel</span><span class="o">.</span><span class="n">T</span>
+
+<span class="n">hsobel_r</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ravel</span><span class="p">(</span><span class="n">hsobel</span><span class="p">)</span>
+<span class="n">vsobel_r</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ravel</span><span class="p">(</span><span class="n">vsobel</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">sobel_magnitude_filter</span><span class="p">(</span><span class="n">values</span><span class="p">):</span>
+    <span class="n">h_edge</span> <span class="o">=</span> <span class="n">values</span> <span class="o">@</span> <span class="n">hsobel_r</span>
+    <span class="n">v_edge</span> <span class="o">=</span> <span class="n">values</span> <span class="o">@</span> <span class="n">vsobel_r</span>
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">hypot</span><span class="p">(</span><span class="n">h_edge</span><span class="p">,</span> <span class="n">v_edge</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Now we can try it out on the coins image:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">sobel_mag</span> <span class="o">=</span> <span class="n">ndi</span><span class="o">.</span><span class="n">generic_filter</span><span class="p">(</span><span class="n">coins</span><span class="p">,</span> <span class="n">sobel_magnitude_filter</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">sobel_mag</span><span class="p">,</span> <span class="n">cmap</span><span class="o">=</span><span class="s1">&#39;viridis&#39;</span><span class="p">);</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch3_61_0.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="Sobel magnitude implemented by `generic_filter`" -->
+
+<!-- solution end -->
+
+<!-- exercise end -->
+
+<h2 id="Graphs-and-the-NetworkX-library">Graphs and the NetworkX library<a class="anchor-link" href="#Graphs-and-the-NetworkX-library"> </a></h2><p>Graphs are a natural representation for an astonishing variety of data. Pages
+on the world wide web, for example, can comprise nodes, while links between
+those pages can be, well, links. Or, in biology, so-called <em>transcription
+networks</em> have nodes represent genes and edges connect genes that have a direct
+influence on each other's expression.</p>
+<blockquote><p><strong>Note: graphs and networks {.callout}</strong></p>
+<p>In this context, the term "graph" is synonymous with "network", not with
+"plot". Mathematicians and computer scientists invented slightly different
+words to discuss these: graph = network, vertex = node, edge = link = arc. As
+most people do, we will be using these terms interchangeably.</p>
+<p>You might be slightly more familiar with the network terminology: a network
+consists of <em>nodes</em> and <em>links</em> between the nodes. Equivalently, a graph
+consists of <em>vertices</em> and <em>edges</em> between the vertices. In NetworkX, you
+have <code>Graph</code> objects consisting of <code>nodes</code> and <code>edges</code> between the nodes, and
+this is probably the most common usage.</p>
+</blockquote>
+<p>To introduce you to graphs, we will reproduce some results from the paper
+<a href="http://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1001066">"Structural properties of the <em>Caenorhabditis elegans</em> neuronal network"</a>, by Lav Varshney <em>et al</em>, 2011.</p>
+<p>In our example, we will represent neurons in the nematode worm's nervous system as
+nodes, and place an edge between two nodes when a neuron makes a synapse with
+another. (<em>Synapses</em> are the chemical connections through which neurons
+communicate.) The worm is an awesome example of neural connectivity analysis
+because every worm (of this species) has the same number of neurons (302), and the
+connections between them are all known. This has resulted in the fantastic Openworm
+project [^openworm], which we encourage you to read more about.</p>
+<p>You can download the neuronal dataset in Excel format from the WormAtlas
+database at <a href="http://www.wormatlas.org/neuronalwiring.html#Connectivitydata">http://www.wormatlas.org/neuronalwiring.html#Connectivitydata</a>.
+The <code>pandas</code> library allows one to read an Excel table over the web, so we will
+use it here to read in the data, then feed that into NetworkX.</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
+<span class="n">connectome_url</span> <span class="o">=</span> <span class="s1">&#39;http://www.wormatlas.org/images/NeuronConnect.xls&#39;</span>
+<span class="n">conn</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_excel</span><span class="p">(</span><span class="n">connectome_url</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p><code>conn</code> now contains a pandas DataFrame, with rows of the form:</p>
+<p>[Neuron1, Neuron2, connection type, strength]</p>
+<p>We are only going to examine the connectome of chemical synapses, so we filter
+out other synapse types as follows:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">conn_edges</span> <span class="o">=</span> <span class="p">[(</span><span class="n">n1</span><span class="p">,</span> <span class="n">n2</span><span class="p">,</span> <span class="p">{</span><span class="s1">&#39;weight&#39;</span><span class="p">:</span> <span class="n">s</span><span class="p">})</span>
+              <span class="k">for</span> <span class="n">n1</span><span class="p">,</span> <span class="n">n2</span><span class="p">,</span> <span class="n">t</span><span class="p">,</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">conn</span><span class="o">.</span><span class="n">itertuples</span><span class="p">(</span><span class="n">index</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+              <span class="k">if</span> <span class="n">t</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;S&#39;</span><span class="p">)]</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>(Look at the WormAtlas page for a description of the different connection types.)</p>
+<p>We use <code>weight</code> in a dictionary above because it is a special keyword for
+edge properties in NetworkX. We then build the graph using NetworkX's
+<code>DiGraph</code> class:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">import</span> <span class="nn">networkx</span> <span class="k">as</span> <span class="nn">nx</span>
+<span class="n">wormbrain</span> <span class="o">=</span> <span class="n">nx</span><span class="o">.</span><span class="n">DiGraph</span><span class="p">()</span>
+<span class="n">wormbrain</span><span class="o">.</span><span class="n">add_edges_from</span><span class="p">(</span><span class="n">conn_edges</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>We can now examine some of the properties of this network. One of the
+first things researchers ask about directed networks is which nodes are
+the most critical to information flow within it. Nodes with high
+<em>betweenness centrality</em> are those that belong to the shortest path between
+many different pairs of nodes. Think of a rail network: certain stations will
+connect to many lines, so that you will be forced to change lines there
+for many different trips. They are the ones with high betweenness
+centrality.</p>
+<p>With NetworkX, we can find similarly important neurons with ease. In the
+NetworkX API documentation [^nxdoc], under "centrality", the docstring
+for <code>betweenness_centrality</code> [^bwcdoc] specifies a function that takes a
+graph as input and returns a dictionary mapping node IDs to betweenness
+centrality values (floating point values).</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">centrality</span> <span class="o">=</span> <span class="n">nx</span><span class="o">.</span><span class="n">betweenness_centrality</span><span class="p">(</span><span class="n">wormbrain</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Now we can find the neurons with highest centrality using the Python built-in
+function <code>sorted</code>:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">central</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">centrality</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">centrality</span><span class="o">.</span><span class="n">get</span><span class="p">,</span> <span class="n">reverse</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">central</span><span class="p">[:</span><span class="mi">5</span><span class="p">])</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+<div class="output_subarea output_stream output_stdout output_text">
+<pre>[&#39;AVAR&#39;, &#39;AVAL&#39;, &#39;PVCR&#39;, &#39;PVT&#39;, &#39;PVCL&#39;]
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>This returns the neurons AVAR, AVAL, PVCR, PVT, and PVCL, which have been
+implicated in how the worm responds to prodding: the AVA neurons link
+the worm's front touch receptors (among others) to neurons responsible
+for backward motion, while the PVC neurons link the rear touch receptors to
+forward motion.</p>
+<p>Varshney <em>et al</em> study the properties of a <em>strongly connected component</em>
+of 237 neurons, out of a total of 279. In graphs, a
+<em>connected component</em> is a set of nodes that are reachable by some path
+through all the links. The connectome is a <em>directed</em> graph, meaning the
+edges <em>point</em> from one node to the other, rather than merely connecting
+them. In this case, a strongly connected component is one where all nodes
+are reachable from each other by traversing links <em>in the correct direction</em>.
+So A $\rightarrow$ B $\rightarrow$ C is not strongly connected, because there is no way to get to
+A from B or C. However, A $\rightarrow$ B $\rightarrow$ C $\rightarrow$ A <em>is</em> strongly connected.</p>
+<p>In a neuronal circuit, you can think of the strongly connected component
+as the "brain" of the circuit, where the processing happens, while nodes
+upstream of it are inputs, and nodes downstream are outputs.</p>
+<blockquote><p><strong>Cycles in neuronal networks {.callout}</strong></p>
+<p>The idea of cyclical neuronal circuits dates back to the 1950s. Here's a
+lovely paragraph about this idea from an article in <em>Nautilus</em>,
+"The Man Who Tried to Redeem the World With Logic", by Amanda Gefter:</p>
+<blockquote><p>If one were to see a lightning bolt flash on the sky, the eyes would send a signal to the brain, shuffling it through a chain of neurons. Starting with any given neuron in the chain, you could retrace the signal's steps and figure out just how long ago the lightning struck. Unless, that is, the chain is a loop. In that case, the information encoding the lightning bolt just spins in circles, endlessly. It bears no connection to the time at which the lightning actually occurred. It becomes, as McCulloch put it, "an idea wrenched out of time." In other words, a memory.</p>
+</blockquote>
+</blockquote>
+<p>NetworkX makes straightforward work out of getting the largest strongly
+connected component from our <code>wormbrain</code> network:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">sccs</span> <span class="o">=</span> <span class="n">nx</span><span class="o">.</span><span class="n">strongly_connected_component_subgraphs</span><span class="p">(</span><span class="n">wormbrain</span><span class="p">)</span>
+<span class="n">giantscc</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">sccs</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="nb">len</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">f</span><span class="s1">&#39;The largest strongly connected component has &#39;</span>
+      <span class="n">f</span><span class="s1">&#39;{giantscc.number_of_nodes()} nodes, out of &#39;</span>
+      <span class="n">f</span><span class="s1">&#39;{wormbrain.number_of_nodes()} total.&#39;</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+<div class="output_subarea output_stream output_stdout output_text">
+<pre>The largest strongly connected component has 237 nodes, out of 279 total.
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>As noted in the paper, the size of this component is <em>smaller</em> than
+expected by chance, demonstrating that the network is segregated into
+input, central, and output layers.</p>
+<p>Now we reproduce figure 6B from the paper, the survival function of the
+in-degree distribution. First, compute the relevant quantities:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">in_degrees</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">dict</span><span class="p">(</span><span class="n">wormbrain</span><span class="o">.</span><span class="n">in_degree</span><span class="p">())</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
+<span class="n">in_deg_distrib</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">bincount</span><span class="p">(</span><span class="n">in_degrees</span><span class="p">)</span>
+<span class="n">avg_in_degree</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">in_degrees</span><span class="p">)</span>
+<span class="n">cumfreq</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">cumsum</span><span class="p">(</span><span class="n">in_deg_distrib</span><span class="p">)</span> <span class="o">/</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">in_deg_distrib</span><span class="p">)</span>
+<span class="n">survival</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">-</span> <span class="n">cumfreq</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Then, plot using Matplotlib:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">()</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">loglog</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">survival</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span><span class="p">),</span> <span class="n">survival</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s1">&#39;in-degree distribution&#39;</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s1">&#39;fraction of neurons with higher in-degree distribution&#39;</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">scatter</span><span class="p">(</span><span class="n">avg_in_degree</span><span class="p">,</span> <span class="mf">0.0022</span><span class="p">,</span> <span class="n">marker</span><span class="o">=</span><span class="s1">&#39;v&#39;</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">text</span><span class="p">(</span><span class="n">avg_in_degree</span> <span class="o">-</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.003</span><span class="p">,</span> <span class="s1">&#39;mean=</span><span class="si">%.2f</span><span class="s1">&#39;</span> <span class="o">%</span> <span class="n">avg_in_degree</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_ylim</span><span class="p">(</span><span class="mf">0.002</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">);</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch3_77_0.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="The degree distribution of the worm connectome" -->
+
+<p>There you have it: a reproduction of a scientific analysis, using SciPy. We are
+missing the line fit.... But that's what exercises are for.</p>
+<!-- exercise begin -->
+
+<p>This exercise is a bit of a preview for chapter 7 (optimization):
+use <code>scipy.optimize.curve_fit</code> to fit the tail of the
+in-degree survival function to a power-law,
+$f(d) \sim d^{-\gamma}, d &gt; d_0$,
+for $d_0 = 10$ (the red line in Figure 6B of the paper), and modify the plot
+to include that line.</p>
+<!-- solution begin -->
+
+<p><strong>Solution:</strong> Let's look at the start of the docstring for <code>curve_fit</code>:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+Use non-linear least squares to fit a function, f, to data.
+
+Assumes ``ydata = f(xdata, *params) + eps``
+
+Parameters
+----------
+f : callable
+    The model function, f(x, ...).  It must take the independent
+    variable as the first argument and the parameters to fit as
+    separate remaining arguments.
+xdata : An M-length sequence or an (k,M)-shaped array
+    for functions with k predictors.
+    The independent variable where the data is measured.
+ydata : M-length sequence
+    The dependent data --- nominally f(xdata, ...)
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>It looks like we just need to provide a function that takes in a data point,
+and some parameters, and returns the predicted value. In our case, we want the
+cumulative remaining frequency, $f(d)$ to be proportional to $d^{-\gamma}$.
+That means we need $f(d) = \alpha d^{-gamma}$:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="k">def</span> <span class="nf">fraction_higher</span><span class="p">(</span><span class="n">degree</span><span class="p">,</span> <span class="n">alpha</span><span class="p">,</span> <span class="n">gamma</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">alpha</span> <span class="o">*</span> <span class="n">degree</span> <span class="o">**</span> <span class="p">(</span><span class="o">-</span><span class="n">gamma</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Then, we need our x and y data to fit, <em>for $d &gt; 10$</em>:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">x</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">survival</span><span class="p">))</span>
+<span class="n">valid</span> <span class="o">=</span> <span class="n">x</span> <span class="o">&gt;</span> <span class="mi">10</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">x</span><span class="p">[</span><span class="n">valid</span><span class="p">]</span>
+<span class="n">y</span> <span class="o">=</span> <span class="n">survival</span><span class="p">[</span><span class="n">valid</span><span class="p">]</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>We can now use <code>curve_fit</code> to obtain fit parameters:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">from</span> <span class="nn">scipy.optimize</span> <span class="k">import</span> <span class="n">curve_fit</span>
+
+<span class="n">alpha_fit</span><span class="p">,</span> <span class="n">gamma_fit</span> <span class="o">=</span> <span class="n">curve_fit</span><span class="p">(</span><span class="n">fraction_higher</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Let's plot the results to see how we did:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">y_fit</span> <span class="o">=</span> <span class="n">fraction_higher</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">alpha_fit</span><span class="p">,</span> <span class="n">gamma_fit</span><span class="p">)</span>
+
+<span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">()</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">loglog</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">survival</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span><span class="p">),</span> <span class="n">survival</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s1">&#39;in-degree distribution&#39;</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s1">&#39;fraction of neurons with higher in-degree distribution&#39;</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">scatter</span><span class="p">(</span><span class="n">avg_in_degree</span><span class="p">,</span> <span class="mf">0.0022</span><span class="p">,</span> <span class="n">marker</span><span class="o">=</span><span class="s1">&#39;v&#39;</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">text</span><span class="p">(</span><span class="n">avg_in_degree</span> <span class="o">-</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.003</span><span class="p">,</span> <span class="s1">&#39;mean=</span><span class="si">%.2f</span><span class="s1">&#39;</span> <span class="o">%</span> <span class="n">avg_in_degree</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_ylim</span><span class="p">(</span><span class="mf">0.002</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">loglog</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y_fit</span><span class="p">,</span> <span class="n">c</span><span class="o">=</span><span class="s1">&#39;red&#39;</span><span class="p">);</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch3_87_0.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="Power law fit of the worm brain degree distribution" -->
+
+<p>Voilà! A full Figure 6B, fit and all!</p>
+<!-- solution end -->
+
+<!-- exercise end -->
+
+<p>You now should have a fundamental understanding of graphs as a scientific
+abstraction, and how to easily manipulate and analyse them using Python and
+NetworkX. Now, we move on to a particular kind of graph used in image
+processing and computer vision.</p>
+<h2 id="Region-adjacency-graphs">Region adjacency graphs<a class="anchor-link" href="#Region-adjacency-graphs"> </a></h2><p>A Region Adjacency Graph (RAG) is a representation of an image that is useful
+for <em>segmentation</em>: the division of images into meaningful regions (or
+<em>segments</em>). If you've seen Terminator 2, you've seen segmentation:</p>
+<p><img src="../images/terminator-vision.png" alt="Terminator vision"></p>
+<p>Segmentation is one of those problems that humans do trivially, all the time,
+without thinking, whereas computers have a hard time of it. To
+understand this difficulty, look at this image:</p>
+<p><img src="http://i.imgur.com/ky5qwIS.png" alt="Face (Eileen Collins)"></p>
+<p>While you see a face, a computer only sees a bunch of numbers:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+    58688888888888899998898988888666532121
+    66888886888998999999899998888888865421
+    66665566566689999999999998888888888653
+    66668899998655688999899988888668665554
+    66888899998888888889988888665666666543
+    66888888886868868889998888666688888865
+    66666443334556688889988866666666668866
+    66884235221446588889988665644644444666
+    86864486233664666889886655464321242345
+    86666658333685588888866655659381366324
+    88866686688666866888886658588422485434
+    88888888888688688888866566686666565444
+    88888888868666888888866556688666686555
+    88888988888888888888886656888688886666
+    88889999989998888888886666888888868886
+    88889998888888888888886566888888888866
+    88888998888888688888666566868868888888
+    68888999888888888868886656888888888866
+    68888999998888888688888655688888888866
+    68888999886686668886888656566888888886
+    88888888886668888888888656558888888886
+    68888886665668888889888555555688888886
+    86868868658668868688886555555588886866
+    66688866468866855566655445555656888866
+    66688654888886868666555554556666666865
+    88688658688888888886666655556686688665
+    68888886666888888988888866666656686665
+    66888888845686888999888886666556866655
+    66688888862456668866666654431268686655
+    68688898886689696666655655313668688655
+    68888898888668998998998885356888986655
+    68688889888866899999999866666668986655
+    68888888888866666888866666666688866655
+    56888888888686889986868655566688886555
+    36668888888868888868688666686688866655
+    26686888888888888888888666688688865654
+    28688888888888888888668666668686666555
+    28666688888888888868668668688886665548
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Our visual system is so optimized to spot faces that you might see the
+face even in this blob of numbers! But we hope our point is made. Also,
+you might want to look for the "Faces In Things" Tumblr, which demonstrates
+the face-finding optimization of our visual systems far more humorously.</p>
+<p>At any rate, the challenge is to make sense of those numbers, and where the
+boundaries lie that divide the different parts of the image. A popular
+approach is to find small regions (called superpixels) that
+you're <em>sure</em> belong in the same segment, and then merge those according
+to some more sophisticated rule.</p>
+<p>As a simple example, suppose you want to segment out the tiger in this
+picture, from the Berkeley Segmentation Dataset (BSDS):</p>
+<p><img src="http://www.eecs.berkeley.edu/Research/Projects/CS/vision/bsds/BSDS300/html/images/plain/normal/color/108073.jpg" alt="BSDS-108073 tiger"></p>
+<p>A clustering algorithm, simple linear iterative clustering (SLIC) [^slic], can give
+us a decent starting point. It is available in the scikit-image library.</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">url</span> <span class="o">=</span> <span class="p">(</span><span class="s1">&#39;http://www.eecs.berkeley.edu/Research/Projects/CS/vision/&#39;</span>
+       <span class="s1">&#39;bsds/BSDS300/html/images/plain/normal/color/108073.jpg&#39;</span><span class="p">)</span>
+<span class="n">tiger</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">imread</span><span class="p">(</span><span class="n">url</span><span class="p">)</span>
+<span class="kn">from</span> <span class="nn">skimage</span> <span class="k">import</span> <span class="n">segmentation</span>
+<span class="n">seg</span> <span class="o">=</span> <span class="n">segmentation</span><span class="o">.</span><span class="n">slic</span><span class="p">(</span><span class="n">tiger</span><span class="p">,</span> <span class="n">n_segments</span><span class="o">=</span><span class="mi">30</span><span class="p">,</span> <span class="n">compactness</span><span class="o">=</span><span class="mf">40.0</span><span class="p">,</span>
+                        <span class="n">enforce_connectivity</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">sigma</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Scikit-image also has a function to <em>display</em> segmentations, which we use to
+visualize the result of SLIC:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">from</span> <span class="nn">skimage</span> <span class="k">import</span> <span class="n">color</span>
+<span class="n">io</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">color</span><span class="o">.</span><span class="n">label2rgb</span><span class="p">(</span><span class="n">seg</span><span class="p">,</span> <span class="n">tiger</span><span class="p">));</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch3_93_0.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="SLIC segmentation of the tiger image" -->
+
+<p>This shows that the body of the tiger has been split in three parts, with the
+rest of the image in the remaining segments.</p>
+<p>A region adjacency graph (RAG) is a graph in which every node represents one
+of the above regions, and an edge connects two nodes when they touch. For a
+taste of what it looks like before we build one, we'll use the <code>show_rag</code> function
+from scikit-image — indeed, the library that contains this chapter's code snippet!</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">from</span> <span class="nn">skimage.future</span> <span class="k">import</span> <span class="n">graph</span>
+
+<span class="n">g</span> <span class="o">=</span> <span class="n">graph</span><span class="o">.</span><span class="n">rag_mean_color</span><span class="p">(</span><span class="n">tiger</span><span class="p">,</span> <span class="n">seg</span><span class="p">)</span>
+<span class="n">graph</span><span class="o">.</span><span class="n">show_rag</span><span class="p">(</span><span class="n">seg</span><span class="p">,</span> <span class="n">g</span><span class="p">,</span> <span class="n">tiger</span><span class="p">);</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch3_95_0.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="Region adjacency graph overlaid on the tiger image" -->
+
+<p>Here, you can see the nodes corresponding to each segment, and the edges
+between adjacent segments. These are colored with the YlGnBu (yellow-green-blue)
+colormap from matplotlib, according to the difference in color between the
+two nodes.</p>
+<p>The figure also shows the magic of thinking of segmentations as graphs: you can
+see that edges between nodes within the tiger and those outside of it are brighter
+(higher-valued) than edges within the same object. Thus, if we can cut the
+graph along those edges, we will get our segmentation. We have chosen an easy
+example for color-based segmentation, but the same principles hold true for
+graphs with more complicated pairwise relationships.</p>
+<h2 id="Elegant-ndimage:-how-to-build-graphs-from-image-regions">Elegant ndimage: how to build graphs from image regions<a class="anchor-link" href="#Elegant-ndimage:-how-to-build-graphs-from-image-regions"> </a></h2><p>All the pieces are in place: you know about numpy arrays, image filtering,
+generic filters, graphs, and region adjacency graphs. Let's build one to pluck
+the tiger out of that picture!</p>
+<p>The obvious approach is to use two nested for-loops to iterate over every pixel
+of the image, look at the neighboring pixels, and checking for different labels:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">import</span> <span class="nn">networkx</span> <span class="k">as</span> <span class="nn">nx</span>
+<span class="k">def</span> <span class="nf">build_rag</span><span class="p">(</span><span class="n">labels</span><span class="p">,</span> <span class="n">image</span><span class="p">):</span>
+    <span class="n">g</span> <span class="o">=</span> <span class="n">nx</span><span class="o">.</span><span class="n">Graph</span><span class="p">()</span>
+    <span class="n">nrows</span><span class="p">,</span> <span class="n">ncols</span> <span class="o">=</span> <span class="n">labels</span><span class="o">.</span><span class="n">shape</span>
+    <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">nrows</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">ncols</span><span class="p">):</span>
+            <span class="n">current_label</span> <span class="o">=</span> <span class="n">labels</span><span class="p">[</span><span class="n">row</span><span class="p">,</span> <span class="n">col</span><span class="p">]</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">current_label</span> <span class="ow">in</span> <span class="n">g</span><span class="p">:</span>
+                <span class="n">g</span><span class="o">.</span><span class="n">add_node</span><span class="p">(</span><span class="n">current_label</span><span class="p">)</span>
+                <span class="n">g</span><span class="o">.</span><span class="n">node</span><span class="p">[</span><span class="n">current_label</span><span class="p">][</span><span class="s1">&#39;total color&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float</span><span class="p">)</span>
+                <span class="n">g</span><span class="o">.</span><span class="n">node</span><span class="p">[</span><span class="n">current_label</span><span class="p">][</span><span class="s1">&#39;pixel count&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+            <span class="k">if</span> <span class="n">row</span> <span class="o">&lt;</span> <span class="n">nrows</span> <span class="o">-</span> <span class="mi">1</span> <span class="ow">and</span> <span class="n">labels</span><span class="p">[</span><span class="n">row</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">col</span><span class="p">]</span> <span class="o">!=</span> <span class="n">current_label</span><span class="p">:</span>
+                <span class="n">g</span><span class="o">.</span><span class="n">add_edge</span><span class="p">(</span><span class="n">current_label</span><span class="p">,</span> <span class="n">labels</span><span class="p">[</span><span class="n">row</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">col</span><span class="p">])</span>
+            <span class="k">if</span> <span class="n">col</span> <span class="o">&lt;</span> <span class="n">ncols</span> <span class="o">-</span> <span class="mi">1</span> <span class="ow">and</span> <span class="n">labels</span><span class="p">[</span><span class="n">row</span><span class="p">,</span> <span class="n">col</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span> <span class="o">!=</span> <span class="n">current_label</span><span class="p">:</span>
+                <span class="n">g</span><span class="o">.</span><span class="n">add_edge</span><span class="p">(</span><span class="n">current_label</span><span class="p">,</span> <span class="n">labels</span><span class="p">[</span><span class="n">row</span><span class="p">,</span> <span class="n">col</span> <span class="o">+</span> <span class="mi">1</span><span class="p">])</span>
+            <span class="n">g</span><span class="o">.</span><span class="n">node</span><span class="p">[</span><span class="n">current_label</span><span class="p">][</span><span class="s1">&#39;total color&#39;</span><span class="p">]</span> <span class="o">+=</span> <span class="n">image</span><span class="p">[</span><span class="n">row</span><span class="p">,</span> <span class="n">col</span><span class="p">]</span>
+            <span class="n">g</span><span class="o">.</span><span class="n">node</span><span class="p">[</span><span class="n">current_label</span><span class="p">][</span><span class="s1">&#39;pixel count&#39;</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+    <span class="k">return</span> <span class="n">g</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Whew! This works, but if you want to segment a 3D image, you'll have to write a
+different version:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">import</span> <span class="nn">networkx</span> <span class="k">as</span> <span class="nn">nx</span>
+<span class="k">def</span> <span class="nf">build_rag_3d</span><span class="p">(</span><span class="n">labels</span><span class="p">,</span> <span class="n">image</span><span class="p">):</span>
+    <span class="n">g</span> <span class="o">=</span> <span class="n">nx</span><span class="o">.</span><span class="n">Graph</span><span class="p">()</span>
+    <span class="n">nplns</span><span class="p">,</span> <span class="n">nrows</span><span class="p">,</span> <span class="n">ncols</span> <span class="o">=</span> <span class="n">labels</span><span class="o">.</span><span class="n">shape</span>
+    <span class="k">for</span> <span class="n">pln</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">nplns</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">nrows</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">ncols</span><span class="p">):</span>
+                <span class="n">current_label</span> <span class="o">=</span> <span class="n">labels</span><span class="p">[</span><span class="n">pln</span><span class="p">,</span> <span class="n">row</span><span class="p">,</span> <span class="n">col</span><span class="p">]</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">current_label</span> <span class="ow">in</span> <span class="n">g</span><span class="p">:</span>
+                    <span class="n">g</span><span class="o">.</span><span class="n">add_node</span><span class="p">(</span><span class="n">current_label</span><span class="p">)</span>
+                    <span class="n">g</span><span class="o">.</span><span class="n">node</span><span class="p">[</span><span class="n">current_label</span><span class="p">][</span><span class="s1">&#39;total color&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float</span><span class="p">)</span>
+                    <span class="n">g</span><span class="o">.</span><span class="n">node</span><span class="p">[</span><span class="n">current_label</span><span class="p">][</span><span class="s1">&#39;pixel count&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+                <span class="k">if</span> <span class="n">pln</span> <span class="o">&lt;</span> <span class="n">nplns</span> <span class="o">-</span> <span class="mi">1</span> <span class="ow">and</span> <span class="n">labels</span><span class="p">[</span><span class="n">pln</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">row</span><span class="p">,</span> <span class="n">col</span><span class="p">]</span> <span class="o">!=</span> <span class="n">current_label</span><span class="p">:</span>
+                    <span class="n">g</span><span class="o">.</span><span class="n">add_edge</span><span class="p">(</span><span class="n">current_label</span><span class="p">,</span> <span class="n">labels</span><span class="p">[</span><span class="n">pln</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">row</span><span class="p">,</span> <span class="n">col</span><span class="p">])</span>
+                <span class="k">if</span> <span class="n">row</span> <span class="o">&lt;</span> <span class="n">nrows</span> <span class="o">-</span> <span class="mi">1</span> <span class="ow">and</span> <span class="n">labels</span><span class="p">[</span><span class="n">pln</span><span class="p">,</span> <span class="n">row</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">col</span><span class="p">]</span> <span class="o">!=</span> <span class="n">current_label</span><span class="p">:</span>
+                    <span class="n">g</span><span class="o">.</span><span class="n">add_edge</span><span class="p">(</span><span class="n">current_label</span><span class="p">,</span> <span class="n">labels</span><span class="p">[</span><span class="n">pln</span><span class="p">,</span> <span class="n">row</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">col</span><span class="p">])</span>
+                <span class="k">if</span> <span class="n">col</span> <span class="o">&lt;</span> <span class="n">ncols</span> <span class="o">-</span> <span class="mi">1</span> <span class="ow">and</span> <span class="n">labels</span><span class="p">[</span><span class="n">pln</span><span class="p">,</span> <span class="n">row</span><span class="p">,</span> <span class="n">col</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span> <span class="o">!=</span> <span class="n">current_label</span><span class="p">:</span>
+                    <span class="n">g</span><span class="o">.</span><span class="n">add_edge</span><span class="p">(</span><span class="n">current_label</span><span class="p">,</span> <span class="n">labels</span><span class="p">[</span><span class="n">pln</span><span class="p">,</span> <span class="n">row</span><span class="p">,</span> <span class="n">col</span> <span class="o">+</span> <span class="mi">1</span><span class="p">])</span>
+                <span class="n">g</span><span class="o">.</span><span class="n">node</span><span class="p">[</span><span class="n">current_label</span><span class="p">][</span><span class="s1">&#39;total color&#39;</span><span class="p">]</span> <span class="o">+=</span> <span class="n">image</span><span class="p">[</span><span class="n">pln</span><span class="p">,</span> <span class="n">row</span><span class="p">,</span> <span class="n">col</span><span class="p">]</span>
+                <span class="n">g</span><span class="o">.</span><span class="n">node</span><span class="p">[</span><span class="n">current_label</span><span class="p">][</span><span class="s1">&#39;pixel count&#39;</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+    <span class="k">return</span> <span class="n">g</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Both of these are pretty ugly and unwieldy, too. And difficult to extend:
+if we want to count diagonally neighboring pixels as adjacent (that is,
+[row, col] is "adjacent to" [row + 1, col + 1]), the code becomes even
+messier. And if we want to analyze 3D video, we need yet another
+dimension, and another level of nesting. It's a mess!</p>
+<p>Enter Vighnesh's insight: SciPy's <code>generic_filter</code> function already does
+this iteration for us! We used it above to compute an arbitrarily
+complicated function on the neighborhood of every element of a numpy
+array. Only now we don't want a filtered image out of the function: we
+want a graph. It turns out that <code>generic_filter</code> lets you pass additional
+arguments to the filter function, and we can use that to build the graph:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">import</span> <span class="nn">networkx</span> <span class="k">as</span> <span class="nn">nx</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">from</span> <span class="nn">scipy</span> <span class="k">import</span> <span class="n">ndimage</span> <span class="k">as</span> <span class="n">nd</span>
+
+<span class="k">def</span> <span class="nf">add_edge_filter</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">graph</span><span class="p">):</span>
+    <span class="n">center</span> <span class="o">=</span> <span class="n">values</span><span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="n">values</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span><span class="p">]</span>
+    <span class="k">for</span> <span class="n">neighbor</span> <span class="ow">in</span> <span class="n">values</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">neighbor</span> <span class="o">!=</span> <span class="n">center</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">graph</span><span class="o">.</span><span class="n">has_edge</span><span class="p">(</span><span class="n">center</span><span class="p">,</span> <span class="n">neighbor</span><span class="p">):</span>
+            <span class="n">graph</span><span class="o">.</span><span class="n">add_edge</span><span class="p">(</span><span class="n">center</span><span class="p">,</span> <span class="n">neighbor</span><span class="p">)</span>
+    <span class="c1"># float return value is unused but needed by `generic_filter`</span>
+    <span class="k">return</span> <span class="mf">0.0</span>
+
+<span class="k">def</span> <span class="nf">build_rag</span><span class="p">(</span><span class="n">labels</span><span class="p">,</span> <span class="n">image</span><span class="p">):</span>
+    <span class="n">g</span> <span class="o">=</span> <span class="n">nx</span><span class="o">.</span><span class="n">Graph</span><span class="p">()</span>
+    <span class="n">footprint</span> <span class="o">=</span> <span class="n">ndi</span><span class="o">.</span><span class="n">generate_binary_structure</span><span class="p">(</span><span class="n">labels</span><span class="o">.</span><span class="n">ndim</span><span class="p">,</span> <span class="n">connectivity</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">_</span> <span class="o">=</span> <span class="n">ndi</span><span class="o">.</span><span class="n">generic_filter</span><span class="p">(</span><span class="n">labels</span><span class="p">,</span> <span class="n">add_edge_filter</span><span class="p">,</span> <span class="n">footprint</span><span class="o">=</span><span class="n">footprint</span><span class="p">,</span>
+                           <span class="n">mode</span><span class="o">=</span><span class="s1">&#39;nearest&#39;</span><span class="p">,</span> <span class="n">extra_arguments</span><span class="o">=</span><span class="p">(</span><span class="n">g</span><span class="p">,))</span>
+    <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="n">g</span><span class="p">:</span>
+        <span class="n">g</span><span class="o">.</span><span class="n">node</span><span class="p">[</span><span class="n">n</span><span class="p">][</span><span class="s1">&#39;total color&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">double</span><span class="p">)</span>
+        <span class="n">g</span><span class="o">.</span><span class="n">node</span><span class="p">[</span><span class="n">n</span><span class="p">][</span><span class="s1">&#39;pixel count&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">index</span> <span class="ow">in</span> <span class="n">np</span><span class="o">.</span><span class="n">ndindex</span><span class="p">(</span><span class="n">labels</span><span class="o">.</span><span class="n">shape</span><span class="p">):</span>
+        <span class="n">n</span> <span class="o">=</span> <span class="n">labels</span><span class="p">[</span><span class="n">index</span><span class="p">]</span>
+        <span class="n">g</span><span class="o">.</span><span class="n">node</span><span class="p">[</span><span class="n">n</span><span class="p">][</span><span class="s1">&#39;total color&#39;</span><span class="p">]</span> <span class="o">+=</span> <span class="n">image</span><span class="p">[</span><span class="n">index</span><span class="p">]</span>
+        <span class="n">g</span><span class="o">.</span><span class="n">node</span><span class="p">[</span><span class="n">n</span><span class="p">][</span><span class="s1">&#39;pixel count&#39;</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+    <span class="k">return</span> <span class="n">g</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Here are a few reasons this is a brilliant piece of code:</p>
+<ul>
+<li><code>ndi.generic_filter</code> iterates over array elements <em>with their neighbors</em>.
+(Use <code>numpy.ndindex</code> to simply iterate over array indices.)</li>
+<li>We return "0.0" from the filter function because <code>generic_filter</code> requires
+the filter function to return a float. However, we ignore the filter
+output (which is zero everywhere), and use it only for its "side effect" of adding edges to the graph.</li>
+<li>The loops are not nested several levels deep. This makes the code more
+compact, easier to take in in one go.</li>
+<li>The code works identically for 1D, 2D, 3D, or even 8D images!</li>
+<li>If we want to add support for diagonal connectivity, we just need to
+change the <code>connectivity</code> parameter to <code>ndi.generate_binary_structure</code></li>
+</ul>
+<h2 id="Putting-it-all-together:-mean-color-segmentation">Putting it all together: mean color segmentation<a class="anchor-link" href="#Putting-it-all-together:-mean-color-segmentation"> </a></h2><p>Now, we can use everything we've learned to segment the tiger in the image above:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">g</span> <span class="o">=</span> <span class="n">build_rag</span><span class="p">(</span><span class="n">seg</span><span class="p">,</span> <span class="n">tiger</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="n">g</span><span class="p">:</span>
+    <span class="n">node</span> <span class="o">=</span> <span class="n">g</span><span class="o">.</span><span class="n">node</span><span class="p">[</span><span class="n">n</span><span class="p">]</span>
+    <span class="n">node</span><span class="p">[</span><span class="s1">&#39;mean&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">node</span><span class="p">[</span><span class="s1">&#39;total color&#39;</span><span class="p">]</span> <span class="o">/</span> <span class="n">node</span><span class="p">[</span><span class="s1">&#39;pixel count&#39;</span><span class="p">]</span>
+<span class="k">for</span> <span class="n">u</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">g</span><span class="o">.</span><span class="n">edges</span><span class="p">():</span>
+    <span class="n">d</span> <span class="o">=</span> <span class="n">g</span><span class="o">.</span><span class="n">node</span><span class="p">[</span><span class="n">u</span><span class="p">][</span><span class="s1">&#39;mean&#39;</span><span class="p">]</span> <span class="o">-</span> <span class="n">g</span><span class="o">.</span><span class="n">node</span><span class="p">[</span><span class="n">v</span><span class="p">][</span><span class="s1">&#39;mean&#39;</span><span class="p">]</span>
+    <span class="n">g</span><span class="p">[</span><span class="n">u</span><span class="p">][</span><span class="n">v</span><span class="p">][</span><span class="s1">&#39;weight&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Each edge holds the difference between the average color of each segment.
+We can now threshold the graph:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="k">def</span> <span class="nf">threshold_graph</span><span class="p">(</span><span class="n">g</span><span class="p">,</span> <span class="n">t</span><span class="p">):</span>
+    <span class="n">to_remove</span> <span class="o">=</span> <span class="p">[(</span><span class="n">u</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span> <span class="k">for</span> <span class="p">(</span><span class="n">u</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">d</span><span class="p">)</span> <span class="ow">in</span> <span class="n">g</span><span class="o">.</span><span class="n">edges</span><span class="p">(</span><span class="n">data</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+                 <span class="k">if</span> <span class="n">d</span><span class="p">[</span><span class="s1">&#39;weight&#39;</span><span class="p">]</span> <span class="o">&gt;</span> <span class="n">t</span><span class="p">]</span>
+    <span class="n">g</span><span class="o">.</span><span class="n">remove_edges_from</span><span class="p">(</span><span class="n">to_remove</span><span class="p">)</span>
+<span class="n">threshold_graph</span><span class="p">(</span><span class="n">g</span><span class="p">,</span> <span class="mi">80</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Finally, we use the numpy index-with-an-array trick we learned in chapter 2:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">map_array</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">seg</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="nb">int</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">segment</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">nx</span><span class="o">.</span><span class="n">connected_components</span><span class="p">(</span><span class="n">g</span><span class="p">)):</span>
+    <span class="k">for</span> <span class="n">initial</span> <span class="ow">in</span> <span class="n">segment</span><span class="p">:</span>
+        <span class="n">map_array</span><span class="p">[</span><span class="nb">int</span><span class="p">(</span><span class="n">initial</span><span class="p">)]</span> <span class="o">=</span> <span class="n">i</span>
+<span class="n">segmented</span> <span class="o">=</span> <span class="n">map_array</span><span class="p">[</span><span class="n">seg</span><span class="p">]</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">color</span><span class="o">.</span><span class="n">label2rgb</span><span class="p">(</span><span class="n">segmented</span><span class="p">,</span> <span class="n">tiger</span><span class="p">));</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch3_107_0.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="A crude, but complete, segmentation of the tiger image" -->
+
+<p>Oops! Looks like the cat lost its tail!</p>
+<p>Still, we think that's a nice demonstration of the capabilities of RAGs...
+And the beauty with which SciPy and NetworkX make it feasible.
+Many of these functions are available in the scikit-image library. If you
+are interested in image analysis, look it up!</p>
+<!-- --><div class="footnotes">
+<hr>
+<ol></ol>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+ 
+
+
+    </main>
+    

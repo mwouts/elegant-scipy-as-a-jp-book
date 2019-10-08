@@ -1,0 +1,176 @@
+---
+title: |-
+  Epilogue
+prev_page:
+  url: /ch8.html
+  title: |-
+    Big Data in Little Laptop with Toolz
+next_page:
+  url: 
+  title: |-
+    
+suffix: .md
+
+comment: "***PROGRAMMATICALLY GENERATED, DO NOT EDIT. SEE ORIGINAL FILES IN /content***"
+---
+
+    <main class="jupyter-page">
+    <div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<h1 id="Epilogue">Epilogue<a class="anchor-link" href="#Epilogue"> </a></h1><blockquote><p>Quality means doing it right when no one is looking.</p>
+<p>— Henry Ford</p>
+</blockquote>
+<p>Our main goal with this book was to promote elegant uses of the NumPy and SciPy
+libraries. While teaching you how to do effective scientific analysis with SciPy,
+we hope to have inspired in you the feeling that quality code is something
+worth striving for.</p>
+<h2 id="Where-to-next?">Where to next?<a class="anchor-link" href="#Where-to-next?"> </a></h2><p>Now that you know enough SciPy to analyze whatever data gets thrown your way,
+how do you move forward? We said when we started that we couldn't hope to cover
+all there is to know about the library and all its offshoots. Before we part ways,
+we want to point you to the many resources available to help you.</p>
+<h3 id="Mailing-lists">Mailing lists<a class="anchor-link" href="#Mailing-lists"> </a></h3><p>We mentioned in the preface that SciPy is a community. A great way to continue
+learning is to subscribe to the main mailing lists for NumPy, SciPy, pandas,
+matplotlib, scikit-image, and other libraries you might be interested in, and read
+them regularly.</p>
+<p>And when you do get stuck in your own work, don't be afraid to seek help there! We
+are a friendly bunch! The <em>main</em> requirement when seeking help is to show that
+you've tried a bit of problem solving yourself, and to provide others with a
+minimal script and enough sample data to demonstrate your problem and how you've
+tried to fix it.</p>
+<ul>
+<li><strong>No:</strong> "I need to generate a big array of random Gaussians. Can someone
+help?"</li>
+<li><strong>No:</strong> "I have this huge library at <a href="https://github.com/ron_obvious">https://github.com/ron_obvious</a>, if you
+look in the statistics library, there's a part that really needs random
+Gaussians, can someone take a look???"</li>
+<li><strong>Yes:</strong> "I've been trying to generate a big list of random Gaussians like
+so: <code>gauss = [np.random.randn()] * 10**5</code>. But when I compute <code>np.mean(gauss)</code>,
+it's hardly ever as close to 0 as I expect. What am I doing wrong? The full
+script ready for copy-paste is below.</li>
+</ul>
+<h3 id="GitHub">GitHub<a class="anchor-link" href="#GitHub"> </a></h3><p>We also talked in the preface about GitHub. All of the code that we discussed lives
+on GitHub:</p>
+<ul>
+<li><a href="https://github.com/numpy/numpy">https://github.com/numpy/numpy</a></li>
+<li><a href="https://github.com/scipy/scipy">https://github.com/scipy/scipy</a></li>
+</ul>
+<p>and others. When something isn't working as you expect, it could be a bug. If,
+after some investigation, you are convinced that you have indeed uncovered a
+bug, you should go to the "issues" tab of the relevant GitHub repository and
+create a new issue. This will ensure that the bug is on the radar of the
+developers of that library, and that it will (hopefully) be fixed in the next
+version. By the way, this advice also applies to "bugs" in the documentation:
+if something in a library's documentation isn't clear to you, file an issue!</p>
+<p>Even better than filing an issue is <em>submitting a pull request</em>. A pull request
+improving a library's documentation is a great way to dip your toes in open
+source! We can't cover the process here, but there are many books and resources
+out there to help you:</p>
+<ul>
+<li>Anthony Scopatz and Katy Huff's <a href="http://shop.oreilly.com/product/0636920033424.do">Effective Computation in
+Physics</a> covers git and
+GitHub, among many other topics in scientific computation.</li>
+<li><a href="http://shop.oreilly.com/product/0636920033059.do">Introducing GitHub</a> by
+Peter Bell and Brent Beer, covers GitHub in more detail.</li>
+<li><a href="https://software-carpentry.org/">Software Carpentry</a> has git lessons, and
+offers free workshops around the world throughout the year.</li>
+<li>Based partly on those lessons, one of your authors has created a complete
+tutorial on git and GitHub pull requests, <a href="http://jni.github.io/git-tutorial/">Open Source Science with Git and
+GitHub</a>.</li>
+<li>Finally, many open source projects on GitHub have a
+<a href="https://github.com/scikit-image/scikit-image/blob/master/.github/CONTRIBUTING.txt">"CONTRIBUTING"</a>
+file, which contains a set of guidelines for contributing code to the project.</li>
+</ul>
+<p>So, you are not starved for help on this topic!</p>
+<p>We encourage you to contribute to the SciPy ecosystem as often as you can,
+not only because you will help make these libraries better for all, but also
+because it is one of the best ways to develop your coding abilities. With every
+pull request you submit, you will get feedback about your code, helping you to
+improve. You'll also become more familiar with the GitHub contributing process
+and etiquette, which are highly valuable skills in today's job market.</p>
+<h3 id="Conferences">Conferences<a class="anchor-link" href="#Conferences"> </a></h3><p>In the same vein, we highly recommend attending a coding conference in this field.
+SciPy, held every year in Austin, is fantastic, and probably your best bet if you
+enjoyed this book. There's also a European version, EuroSciPy, which changes host
+city every two years. Finally, the more general PyCon conference happens in the
+US but also has offshoots around the world, such as PyCon-AU in Australia, which
+has a "Science and Data" miniconference the day before the main conference.</p>
+<p>Whichever conference you choose, <em>stay for the sprints</em> at the end of the
+conference. A coding sprint is an intense session of team coding, and it is a
+fantastic opportunity to learn the process of contributing to open source,
+regardless of your skill level.  It is how one of your authors (Juan) started
+in their open source journey.</p>
+<h2 id="Beyond-SciPy">Beyond SciPy<a class="anchor-link" href="#Beyond-SciPy"> </a></h2><p>The SciPy library is written not just in Python, but also in highly optimized C
+and Fortran code that interfaces with Python. Together with NumPy, and related
+libraries, it tries to cover most use cases that come up in scientific data
+analysis, and provides very fast functions for these. Sometimes, however, a
+scientific problem doesn't match at all with what's already in SciPy, and a pure
+Python solution is too slow to be useful. What to do then?</p>
+<p><a href="http://shop.oreilly.com/product/0636920028963.do">High-Performance Python</a>,
+by Micha Gorelick and Ian Ozsvald, covers what you need to know in these
+situations: how to find where you <em>really</em> need performance, and the options
+available to get that performance. We highly recommend it.</p>
+<p>Here, we want to briefly mention two of those options that are particularly
+relevant in the SciPy world.</p>
+<p>First, Cython is a variant of Python that can be compiled to C, but then be
+imported into Python. By providing some type annotations to Python variables,
+the compiled C code can end up being a hundred or even a thousand times faster
+than comparable Python code. Cython is now an industry standard and is used in
+NumPy, SciPy, and many related libraries (such as scikit-image) to provide fast
+algorithms in array-based code. Kurt Smith has written the simply-titled
+<a href="http://shop.oreilly.com/product/0636920033431.do">Cython</a> to teach you the
+fundamentals of this language.</p>
+<p>An often easier-to-use alternative to Cython is Numba, a just-in-time compiler
+(JIT) for array-based Python. JITs wait for a function to be executed once, at
+which point they can infer the types of all the function arguments and output,
+and compile the code into a highly efficient form for those specific types. In
+Numba code, you don't need to annotate types: Numba will infer them when a
+function is first called. Instead, you simply need to make sure that you only
+use basic types (integers, floats, etc), and arrays, rather than more
+complicated Python objects. In these cases, Numba can compile the Python code
+down to very efficient code and speed up computations by orders of magnitude.</p>
+<p>Numba is still very young, but it is already very useful. Importantly, it shows
+what is possible by Python JITs, which are set to become more commonplace: Python
+3.6 added features to make it easier to use new JITs (the Pyjion JIT is based on
+these). You can see some examples of Numba use, including how to combine it with
+SciPy, in Juan's blog at <a href="https://ilovesymposia.com/tag/numba/">https://ilovesymposia.com/tag/numba/</a>. And Numba,
+naturally, has its own very active and friendly mailing list.</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<h2 id="Contributing-to-this-book">Contributing to this book<a class="anchor-link" href="#Contributing-to-this-book"> </a></h2><p>The source of this book is itself hosted on GitHub at
+<a href="https://github.com/elegant-scipy/elegant-scipy">https://github.com/elegant-scipy/elegant-scipy</a> (also at <a href="http://elegant-scipy.org">http://elegant-scipy.org</a>).
+Just as if you were contributing to any other open source project, you can raise
+issues or submit pull requests if you find bugs or typos — and we would very much
+appreciate it if you did!</p>
+<p>We used some of the best code we could find to illustrate the various parts of
+the SciPy and NumPy libraries. If you have a better example, please raise an issue
+in the repo! We would love to include it in future editions.</p>
+<p>We are also on Twitter, at <a href="https://twitter.com/elegantscipy">@elegantscipy</a>. Drop
+us a line if you want to chat about the book! The individual authors are
+<a href="https://twitter.com/jnuneziglesias">@jnuneziglesias</a>,
+<a href="https://twitter.com/stefanvdwalt">@stefanvdwalt</a>, and
+<a href="https://twitter.com/hdashnow">@hdashnow</a>.</p>
+<p>We particularly want to hear about it if you use any of the ideas or code in this
+book to advance your scientific research. That's the point of SciPy!</p>
+<h2 id="Until-next-time...">Until next time...<a class="anchor-link" href="#Until-next-time..."> </a></h2><p>In the meantime, we hope you enjoyed this book and found it useful. If so, tell
+all your friends, and come say hi on the mailing lists, at a conference, on
+GitHub, and on Twitter! Thanks for reading, and here's to even more Elegant SciPy!</p>
+
+</div>
+</div>
+</div>
+</div>
+
+ 
+
+
+    </main>
+    

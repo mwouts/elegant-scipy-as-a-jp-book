@@ -1,0 +1,1655 @@
+---
+title: |-
+  Function optimization in SciPy
+prev_page:
+  url: /ch6.html
+  title: |-
+    Linear algebra in SciPy
+next_page:
+  url: /ch8.html
+  title: |-
+    Big Data in Little Laptop with Toolz
+suffix: .md
+
+comment: "***PROGRAMMATICALLY GENERATED, DO NOT EDIT. SEE ORIGINAL FILES IN /content***"
+---
+
+    <main class="jupyter-page">
+    <div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<h1 id="Function-optimization-in-SciPy">Function optimization in SciPy<a class="anchor-link" href="#Function-optimization-in-SciPy"> </a></h1><blockquote><p>"What's new?" is an interesting and broadening eternal question, but one
+which, if pursued exclusively, results only in an endless parade of trivia
+and fashion, the silt of tomorrow. I would like, instead, to be concerned
+with the question "What is best?", a question which cuts deeply rather than
+broadly, a question whose answers tend to move the silt downstream.</p>
+<p>— Robert M Pirsig, <em>Zen and the Art of Motorcycle Maintenance</em></p>
+</blockquote>
+<p>When hanging a picture on the wall, it is sometimes difficult to get it
+straight.  You make an adjustment, step back, evaluate the picture's
+horizontality, and repeat.  This is a process of <em>optimization</em>: we're
+changing the orientation of the portrait until it satisfies our
+demand—that it makes a zero angle with the horizon.</p>
+<p>In mathematics, our demand is called a "cost function", and the
+orientation of the portrait the "parameter".  In a typical
+optimization problem, we vary the parameters until the cost function
+is minimized.</p>
+<p>Consider, for example, the shifted parabola, $f(x) = (x - 3)^2$.
+We'd like to find the value of x that minimizes this cost function. We
+know that this function, with parameter $x$, has a minimum at 3,
+because we can calculate the derivative, set it to zero, and see that $2 (x - 3) = 0$, i.e. $x = 3$.</p>
+<p>But, if this function were much more complicated (for example if the
+expression had many terms, multiple points of zero derivative,
+contained non-linearities, or was dependent on more variables), using
+a hand calculation would become arduous.</p>
+<p>You can think of the cost function as representing a landscape, where we
+are trying to find the lowest point.  That analogy immediately
+highlights one of the hard parts of this problem: if you are standing
+in any valley, with mountains surrounding you, how do you know whether
+you are in the lowest valley, or whether this valley just seems low because it is
+surrounded by particularly tall mountains?  In optimization parlance: how
+do you know whether you are trapped in a <em>local
+minimum</em>?  Most optimization algorithms make some
+attempt to address the issue<sup class="footnote-ref" id="fnref-line_search"><a href="#fn-line_search">1</a></sup>.</p>
+<p><img src="../figures/generated/optimization_comparison.png"/>
+<!-- caption text="Comparison of optimization pathways taken by different
+optimization algorithms on the Rosenbrock function (top). Powell's method
+performs a line search along the first dimension before doing gradient descent.
+The conjugate gradient (CG) method, on the other hand, performs gradient
+descent from the starting point." --></p>
+<p>There are many different optimization algorithms to choose from (see
+figure).  You get to choose whether your cost function takes a scalar
+or a vector as input (i.e., do you have one or multiple parameters to
+optimize?).  There are those that require the cost function gradient
+to be given and those that automatically estimate it.  Some only
+search for parameters in a given area (<em>constrained optimization</em>),
+and others examine the entire parameter space.</p>
+<h2 id="Optimization-in-SciPy:-scipy.optimize">Optimization in SciPy: <code>scipy.optimize</code><a class="anchor-link" href="#Optimization-in-SciPy:-scipy.optimize"> </a></h2><p>In the rest of this chapter, we are going to use SciPy's <code>optimize</code> module to
+align two images. Applications of image alignment, or <em>registration</em>, include
+panorama stitching, combination of different brain scans, super-resolution
+imaging, and, in astronomy, object denoising (noise reduction) through the
+combination of multiple exposures.</p>
+<p>We start, as usual, by setting up our plotting environment:</p>
+<div class="footnotes">
+<hr>
+<ol><li id="fn-line_search"><p>Optimization algorithms handle this issue in various
+ways, but two common approaches are line searches and
+trust regions.  With a <em>line search</em>, you try to find
+the cost function minimum along a specific dimension,
+and then successively attempt the same along the other
+dimensions.  With <em>trust regions</em>, we move our guess
+for the minimum in the direction we expect it to be;
+if we see that we are indeed approaching the minimum
+as expected, we repeat the procedure with increased
+confidence.  If not, we lower our confidence and
+search a wider area.<a href="#fnref-line_search" class="footnote">&#8617;</a></p></li>
+</ol>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="c1"># Make plots appear inline, set custom plotting style</span>
+<span class="o">%</span><span class="k">matplotlib</span> inline
+<span class="kn">import</span> <span class="nn">matplotlib.pyplot</span> <span class="k">as</span> <span class="nn">plt</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">style</span><span class="o">.</span><span class="n">use</span><span class="p">(</span><span class="s1">&#39;style/elegant.mplstyle&#39;</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Let's start with the simplest version of the problem: we have two
+images, one shifted relative to the other.  We wish to recover the
+shift that will best align our images.</p>
+<p>Our optimization function will "jiggle" one of the images, and see
+whether jiggling it in one direction or another reduces their
+dissimilarity.  By doing this repeatedly, we can try to find the
+correct alignment.</p>
+<h3 id="An-example:-computing-optimal-image-shift">An example: computing optimal image shift<a class="anchor-link" href="#An-example:-computing-optimal-image-shift"> </a></h3><p>You'll remember our astronaut — Eileen Collins — from chapter 3.
+We will be shifting this image by 50 pixels to the right then comparing it back
+to the original until we
+find the shift that best matches. Obviously this is a silly thing to do, as we
+know the original position, but this way we know the truth, and we can check
+how our algorithm is doing. Here's the original and shifted image.</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">from</span> <span class="nn">skimage</span> <span class="k">import</span> <span class="n">data</span><span class="p">,</span> <span class="n">color</span>
+<span class="kn">from</span> <span class="nn">scipy</span> <span class="k">import</span> <span class="n">ndimage</span> <span class="k">as</span> <span class="n">ndi</span>
+
+<span class="n">astronaut</span> <span class="o">=</span> <span class="n">color</span><span class="o">.</span><span class="n">rgb2gray</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">astronaut</span><span class="p">())</span>
+<span class="n">shifted</span> <span class="o">=</span> <span class="n">ndi</span><span class="o">.</span><span class="n">shift</span><span class="p">(</span><span class="n">astronaut</span><span class="p">,</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">50</span><span class="p">))</span>
+
+<span class="n">fig</span><span class="p">,</span> <span class="n">axes</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="n">nrows</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">ncols</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+<span class="n">axes</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">astronaut</span><span class="p">)</span>
+<span class="n">axes</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s1">&#39;Original&#39;</span><span class="p">)</span>
+<span class="n">axes</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">shifted</span><span class="p">)</span>
+<span class="n">axes</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s1">&#39;Shifted&#39;</span><span class="p">);</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch7_3_0.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="Horizontally shifting an image" -->
+
+<p>For the optimization algorithm to do its work, we need some way of
+defining "dissimilarity"—i.e., the cost function.  The easiest way to do this is to
+simply calculate the average of the squared differences, often called the
+<em>mean squared error</em>, or MSE.</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+
+<span class="k">def</span> <span class="nf">mse</span><span class="p">(</span><span class="n">arr1</span><span class="p">,</span> <span class="n">arr2</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Compute the mean squared error between two arrays.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">((</span><span class="n">arr1</span> <span class="o">-</span> <span class="n">arr2</span><span class="p">)</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>This will return 0 when the images are perfectly aligned, and a higher
+value otherwise. With this cost function, we can check whether two images are aligned:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">ncol</span> <span class="o">=</span> <span class="n">astronaut</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+
+<span class="c1"># Cover a distance of 90% of the length in columns,</span>
+<span class="c1"># with one value per percentage point</span>
+<span class="n">shifts</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="mf">0.9</span> <span class="o">*</span> <span class="n">ncol</span><span class="p">,</span> <span class="mf">0.9</span> <span class="o">*</span> <span class="n">ncol</span><span class="p">,</span> <span class="mi">181</span><span class="p">)</span>
+<span class="n">mse_costs</span> <span class="o">=</span> <span class="p">[]</span>
+
+<span class="k">for</span> <span class="n">shift</span> <span class="ow">in</span> <span class="n">shifts</span><span class="p">:</span>
+    <span class="n">shifted_back</span> <span class="o">=</span> <span class="n">ndi</span><span class="o">.</span><span class="n">shift</span><span class="p">(</span><span class="n">shifted</span><span class="p">,</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">shift</span><span class="p">))</span>
+    <span class="n">mse_costs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">mse</span><span class="p">(</span><span class="n">astronaut</span><span class="p">,</span> <span class="n">shifted_back</span><span class="p">))</span>
+
+<span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">()</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">shifts</span><span class="p">,</span> <span class="n">mse_costs</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s1">&#39;Shift&#39;</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s1">&#39;MSE&#39;</span><span class="p">);</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch7_7_0.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="Mean squared error as a function of horizontal shift of the
+transformed image" -->
+
+<p>With the cost function defined, we can ask <code>scipy.optimize.minimize</code>
+to search for optimal parameters:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">from</span> <span class="nn">scipy</span> <span class="k">import</span> <span class="n">optimize</span>
+
+<span class="k">def</span> <span class="nf">astronaut_shift_error</span><span class="p">(</span><span class="n">shift</span><span class="p">,</span> <span class="n">image</span><span class="p">):</span>
+    <span class="n">corrected</span> <span class="o">=</span> <span class="n">ndi</span><span class="o">.</span><span class="n">shift</span><span class="p">(</span><span class="n">image</span><span class="p">,</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">shift</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">mse</span><span class="p">(</span><span class="n">astronaut</span><span class="p">,</span> <span class="n">corrected</span><span class="p">)</span>
+
+<span class="n">res</span> <span class="o">=</span> <span class="n">optimize</span><span class="o">.</span><span class="n">minimize</span><span class="p">(</span><span class="n">astronaut_shift_error</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="n">shifted</span><span class="p">,),</span>
+                        <span class="n">method</span><span class="o">=</span><span class="s1">&#39;Powell&#39;</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="n">f</span><span class="s1">&#39;The optimal shift for correction is: </span><span class="si">{res.x}</span><span class="s1">&#39;</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+<div class="output_subarea output_stream output_stdout output_text">
+<pre>The optimal shift for correction is: -49.99997565757095
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>It worked! We shifted it by +50 pixels, and, thanks to our MSE measure, SciPy's
+<code>optimize.minimize</code> function has given us the correct amount of shift (-50) to
+get it back to its original state.</p>
+<p>It turns out, however, that this was a particularly easy optimization problem,
+which brings us to the principal difficulty of this kind of
+alignment: sometimes, the MSE has to get worse before it gets better.</p>
+<p>Let's look again at shifting images, starting with the unmodified image:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">ncol</span> <span class="o">=</span> <span class="n">astronaut</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+
+<span class="c1"># Cover a distance of 90% of the length in columns,</span>
+<span class="c1"># with one value per percentage point</span>
+<span class="n">shifts</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="mf">0.9</span> <span class="o">*</span> <span class="n">ncol</span><span class="p">,</span> <span class="mf">0.9</span> <span class="o">*</span> <span class="n">ncol</span><span class="p">,</span> <span class="mi">181</span><span class="p">)</span>
+<span class="n">mse_costs</span> <span class="o">=</span> <span class="p">[]</span>
+
+<span class="k">for</span> <span class="n">shift</span> <span class="ow">in</span> <span class="n">shifts</span><span class="p">:</span>
+    <span class="n">shifted1</span> <span class="o">=</span> <span class="n">ndi</span><span class="o">.</span><span class="n">shift</span><span class="p">(</span><span class="n">astronaut</span><span class="p">,</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">shift</span><span class="p">))</span>
+    <span class="n">mse_costs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">mse</span><span class="p">(</span><span class="n">astronaut</span><span class="p">,</span> <span class="n">shifted1</span><span class="p">))</span>
+
+<span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">()</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">shifts</span><span class="p">,</span> <span class="n">mse_costs</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s1">&#39;Shift&#39;</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s1">&#39;MSE&#39;</span><span class="p">);</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch7_11_0.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="Mean squared error as a function of shift from the original
+image" -->
+
+<p>Starting at zero shift, have a look at the MSE value as the shift becomes
+increasingly negative: it increases consistently until around -300
+pixels of shift, where it starts to decrease again! Only slightly, but it
+decreases nonetheless. The MSE bottoms out at around -400, before it
+increases again. This is called a <em>local minimum</em>.
+Because optimization methods only have access to "nearby"
+values of the cost function, if the function improves by moving in the "wrong"
+direction, the <code>minimize</code> process will move that way regardless. So, if we
+start by an image shifted by -340 pixels:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">shifted2</span> <span class="o">=</span> <span class="n">ndi</span><span class="o">.</span><span class="n">shift</span><span class="p">(</span><span class="n">astronaut</span><span class="p">,</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="o">-</span><span class="mi">340</span><span class="p">))</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p><code>minimize</code> will shift it by a further 40 pixels or so,
+instead of recovering the original image:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">res</span> <span class="o">=</span> <span class="n">optimize</span><span class="o">.</span><span class="n">minimize</span><span class="p">(</span><span class="n">astronaut_shift_error</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="n">shifted2</span><span class="p">,),</span>
+                        <span class="n">method</span><span class="o">=</span><span class="s1">&#39;Powell&#39;</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="n">f</span><span class="s1">&#39;The optimal shift for correction is </span><span class="si">{res.x}</span><span class="s1">&#39;</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+<div class="output_subarea output_stream output_stdout output_text">
+<pre>The optimal shift for correction is -38.51778619396494
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>The common solution to this problem is to smooth or downscale the images, which
+has the dual result of smoothing the objective function. Have a look at the
+same plot, after having smoothed the images with a Gaussian filter:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">from</span> <span class="nn">skimage</span> <span class="k">import</span> <span class="n">filters</span>
+
+<span class="n">astronaut_smooth</span> <span class="o">=</span> <span class="n">filters</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">astronaut</span><span class="p">,</span> <span class="n">sigma</span><span class="o">=</span><span class="mi">20</span><span class="p">)</span>
+
+<span class="n">mse_costs_smooth</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="n">shifts</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="mf">0.9</span> <span class="o">*</span> <span class="n">ncol</span><span class="p">,</span> <span class="mf">0.9</span> <span class="o">*</span> <span class="n">ncol</span><span class="p">,</span> <span class="mi">181</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">shift</span> <span class="ow">in</span> <span class="n">shifts</span><span class="p">:</span>
+    <span class="n">shifted3</span> <span class="o">=</span> <span class="n">ndi</span><span class="o">.</span><span class="n">shift</span><span class="p">(</span><span class="n">astronaut_smooth</span><span class="p">,</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">shift</span><span class="p">))</span>
+    <span class="n">mse_costs_smooth</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">mse</span><span class="p">(</span><span class="n">astronaut_smooth</span><span class="p">,</span> <span class="n">shifted3</span><span class="p">))</span>
+
+<span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">()</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">shifts</span><span class="p">,</span> <span class="n">mse_costs</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s1">&#39;original&#39;</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">shifts</span><span class="p">,</span> <span class="n">mse_costs_smooth</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s1">&#39;smoothed&#39;</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">legend</span><span class="p">(</span><span class="n">loc</span><span class="o">=</span><span class="s1">&#39;lower right&#39;</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s1">&#39;Shift&#39;</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s1">&#39;MSE&#39;</span><span class="p">);</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch7_17_0.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="Effect of smoothing on MSE" -->
+
+<p>As you can see, with some rather extreme smoothing, the "funnel" of
+the error function becomes wider, and less bumpy. Rather than smoothing the
+function itself we can get a similar effect by blurring the images before
+comparing them. Therefore, modern alignment
+software uses what's called a <em>Gaussian pyramid</em>, which is a set of
+progressively lower resolution versions of the same image.  We align
+the the lower resolution (blurrier) images first, to get an
+approximate alignment, and then progressively refine the alignment
+with sharper images.</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="k">def</span> <span class="nf">downsample2x</span><span class="p">(</span><span class="n">image</span><span class="p">):</span>
+    <span class="n">offsets</span> <span class="o">=</span> <span class="p">[((</span><span class="n">s</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">%</span> <span class="mi">2</span><span class="p">)</span> <span class="o">/</span> <span class="mi">2</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">image</span><span class="o">.</span><span class="n">shape</span><span class="p">]</span>
+    <span class="n">slices</span> <span class="o">=</span> <span class="p">[</span><span class="nb">slice</span><span class="p">(</span><span class="n">offset</span><span class="p">,</span> <span class="n">end</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+              <span class="k">for</span> <span class="n">offset</span><span class="p">,</span> <span class="n">end</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">offsets</span><span class="p">,</span> <span class="n">image</span><span class="o">.</span><span class="n">shape</span><span class="p">)]</span>
+    <span class="n">coords</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mgrid</span><span class="p">[</span><span class="n">slices</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">ndi</span><span class="o">.</span><span class="n">map_coordinates</span><span class="p">(</span><span class="n">image</span><span class="p">,</span> <span class="n">coords</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">gaussian_pyramid</span><span class="p">(</span><span class="n">image</span><span class="p">,</span> <span class="n">levels</span><span class="o">=</span><span class="mi">6</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Make a Gaussian image pyramid.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    image : array of float</span>
+<span class="sd">        The input image.</span>
+<span class="sd">    max_layer : int, optional</span>
+<span class="sd">        The number of levels in the pyramid.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    pyramid : iterator of array of float</span>
+<span class="sd">        An iterator of Gaussian pyramid levels, starting with the top</span>
+<span class="sd">        (lowest resolution) level.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">pyramid</span> <span class="o">=</span> <span class="p">[</span><span class="n">image</span><span class="p">]</span>
+
+    <span class="k">for</span> <span class="n">level</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">levels</span> <span class="o">-</span> <span class="mi">1</span><span class="p">):</span>
+        <span class="n">blurred</span> <span class="o">=</span> <span class="n">ndi</span><span class="o">.</span><span class="n">gaussian_filter</span><span class="p">(</span><span class="n">image</span><span class="p">,</span> <span class="n">sigma</span><span class="o">=</span><span class="mi">2</span><span class="o">/</span><span class="mi">3</span><span class="p">)</span>
+        <span class="n">image</span> <span class="o">=</span> <span class="n">downsample2x</span><span class="p">(</span><span class="n">image</span><span class="p">)</span>
+        <span class="n">pyramid</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">image</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="nb">reversed</span><span class="p">(</span><span class="n">pyramid</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Let's see how the 1D alignment looks along that pyramid:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">shifts</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="mf">0.9</span> <span class="o">*</span> <span class="n">ncol</span><span class="p">,</span> <span class="mf">0.9</span> <span class="o">*</span> <span class="n">ncol</span><span class="p">,</span> <span class="mi">181</span><span class="p">)</span>
+<span class="n">nlevels</span> <span class="o">=</span> <span class="mi">8</span>
+<span class="n">costs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">nlevels</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">shifts</span><span class="p">)),</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+<span class="n">astronaut_pyramid</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">gaussian_pyramid</span><span class="p">(</span><span class="n">astronaut</span><span class="p">,</span> <span class="n">levels</span><span class="o">=</span><span class="n">nlevels</span><span class="p">))</span>
+<span class="k">for</span> <span class="n">col</span><span class="p">,</span> <span class="n">shift</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">shifts</span><span class="p">):</span>
+    <span class="n">shifted</span> <span class="o">=</span> <span class="n">ndi</span><span class="o">.</span><span class="n">shift</span><span class="p">(</span><span class="n">astronaut</span><span class="p">,</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">shift</span><span class="p">))</span>
+    <span class="n">shifted_pyramid</span> <span class="o">=</span> <span class="n">gaussian_pyramid</span><span class="p">(</span><span class="n">shifted</span><span class="p">,</span> <span class="n">levels</span><span class="o">=</span><span class="n">nlevels</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">row</span><span class="p">,</span> <span class="n">image</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">shifted_pyramid</span><span class="p">):</span>
+        <span class="n">costs</span><span class="p">[</span><span class="n">row</span><span class="p">,</span> <span class="n">col</span><span class="p">]</span> <span class="o">=</span> <span class="n">mse</span><span class="p">(</span><span class="n">astronaut_pyramid</span><span class="p">[</span><span class="n">row</span><span class="p">],</span> <span class="n">image</span><span class="p">)</span>
+
+<span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">()</span>
+<span class="k">for</span> <span class="n">level</span><span class="p">,</span> <span class="n">cost</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">costs</span><span class="p">):</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">shifts</span><span class="p">,</span> <span class="n">cost</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s1">&#39;Level </span><span class="si">%d</span><span class="s1">&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">nlevels</span> <span class="o">-</span> <span class="n">level</span><span class="p">))</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">legend</span><span class="p">(</span><span class="n">loc</span><span class="o">=</span><span class="s1">&#39;lower right&#39;</span><span class="p">,</span> <span class="n">frameon</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">framealpha</span><span class="o">=</span><span class="mf">0.9</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s1">&#39;Shift&#39;</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s1">&#39;MSE&#39;</span><span class="p">);</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch7_21_0.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="Mean squared error of shift at various levels of a Gaussian
+pyramid" -->
+
+<p>As you can see, at the highest level of the pyramid, that bump at a shift of
+about -325 disappears. We can therefore get an approximate alignment at that
+level, then pop down to the lower levels to refine that alignment.</p>
+<h2 id="Image-registration-with-optimize">Image registration with <code>optimize</code><a class="anchor-link" href="#Image-registration-with-optimize"> </a></h2><p>Let's automate that, and try with a "real" alignment, with three parameters:
+rotation, translation in the row dimension, and translation in the
+column dimension. This is called a "<em>rigid</em> registration" because there are no
+deformations of any kind (scaling, skew, or other stretching). The object is
+considered solid and moved around (including rotation) until a match is found.</p>
+<p>To simplify the code, we'll use the scikit-image <em>transform</em> module to compute
+the shift and rotation of the image. SciPy's <code>optimize</code> requires a vector of
+parameters as input. We first make a
+function that will take such a vector and produce a rigid transformation with
+the right parameters:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">from</span> <span class="nn">skimage</span> <span class="k">import</span> <span class="n">transform</span>
+
+<span class="k">def</span> <span class="nf">make_rigid_transform</span><span class="p">(</span><span class="n">param</span><span class="p">):</span>
+    <span class="n">r</span><span class="p">,</span> <span class="n">tc</span><span class="p">,</span> <span class="n">tr</span> <span class="o">=</span> <span class="n">param</span>
+    <span class="k">return</span> <span class="n">transform</span><span class="o">.</span><span class="n">SimilarityTransform</span><span class="p">(</span><span class="n">rotation</span><span class="o">=</span><span class="n">r</span><span class="p">,</span>
+                                         <span class="n">translation</span><span class="o">=</span><span class="p">(</span><span class="n">tc</span><span class="p">,</span> <span class="n">tr</span><span class="p">))</span>
+
+<span class="n">rotated</span> <span class="o">=</span> <span class="n">transform</span><span class="o">.</span><span class="n">rotate</span><span class="p">(</span><span class="n">astronaut</span><span class="p">,</span> <span class="mi">45</span><span class="p">)</span>
+
+<span class="n">fig</span><span class="p">,</span> <span class="n">axes</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="n">nrows</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">ncols</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+<span class="n">axes</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">astronaut</span><span class="p">)</span>
+<span class="n">axes</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s1">&#39;Original&#39;</span><span class="p">)</span>
+<span class="n">axes</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">rotated</span><span class="p">)</span>
+<span class="n">axes</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s1">&#39;Rotated&#39;</span><span class="p">);</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch7_23_0.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="Another transformation: rotation" -->
+
+<p>Next, we need a cost function. This is just MSE, but SciPy requires a specific
+format: the first argument needs to be the <em>parameter vector</em>, which it is
+optimizing. Subsequent arguments can be passed through the <code>args</code> keyword as a
+tuple, but must remain fixed: only the parameter vector can be optimized. In
+our case, this is just the rotation angle and the two translation parameters:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="k">def</span> <span class="nf">cost_mse</span><span class="p">(</span><span class="n">param</span><span class="p">,</span> <span class="n">reference_image</span><span class="p">,</span> <span class="n">target_image</span><span class="p">):</span>
+    <span class="n">transformation</span> <span class="o">=</span> <span class="n">make_rigid_transform</span><span class="p">(</span><span class="n">param</span><span class="p">)</span>
+    <span class="n">transformed</span> <span class="o">=</span> <span class="n">transform</span><span class="o">.</span><span class="n">warp</span><span class="p">(</span><span class="n">target_image</span><span class="p">,</span> <span class="n">transformation</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">mse</span><span class="p">(</span><span class="n">reference_image</span><span class="p">,</span> <span class="n">transformed</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Finally, we write our alignment function, which optimizes our cost function
+<em>at each level of the Gaussian pyramid</em>, using the result of the previous
+level as a starting point for the next one:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="k">def</span> <span class="nf">align</span><span class="p">(</span><span class="n">reference</span><span class="p">,</span> <span class="n">target</span><span class="p">,</span> <span class="n">cost</span><span class="o">=</span><span class="n">cost_mse</span><span class="p">):</span>
+    <span class="n">nlevels</span> <span class="o">=</span> <span class="mi">7</span>
+    <span class="n">pyramid_ref</span> <span class="o">=</span> <span class="n">gaussian_pyramid</span><span class="p">(</span><span class="n">reference</span><span class="p">,</span> <span class="n">levels</span><span class="o">=</span><span class="n">nlevels</span><span class="p">)</span>
+    <span class="n">pyramid_tgt</span> <span class="o">=</span> <span class="n">gaussian_pyramid</span><span class="p">(</span><span class="n">target</span><span class="p">,</span> <span class="n">levels</span><span class="o">=</span><span class="n">nlevels</span><span class="p">)</span>
+
+    <span class="n">levels</span> <span class="o">=</span> <span class="nb">range</span><span class="p">(</span><span class="n">nlevels</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">image_pairs</span> <span class="o">=</span> <span class="nb">zip</span><span class="p">(</span><span class="n">pyramid_ref</span><span class="p">,</span> <span class="n">pyramid_tgt</span><span class="p">)</span>
+
+    <span class="n">p</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">n</span><span class="p">,</span> <span class="p">(</span><span class="n">ref</span><span class="p">,</span> <span class="n">tgt</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">levels</span><span class="p">,</span> <span class="n">image_pairs</span><span class="p">):</span>
+        <span class="n">p</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">*=</span> <span class="mi">2</span>
+
+        <span class="n">res</span> <span class="o">=</span> <span class="n">optimize</span><span class="o">.</span><span class="n">minimize</span><span class="p">(</span><span class="n">cost</span><span class="p">,</span> <span class="n">p</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="n">ref</span><span class="p">,</span> <span class="n">tgt</span><span class="p">),</span> <span class="n">method</span><span class="o">=</span><span class="s1">&#39;Powell&#39;</span><span class="p">)</span>
+        <span class="n">p</span> <span class="o">=</span> <span class="n">res</span><span class="o">.</span><span class="n">x</span>
+
+        <span class="c1"># print current level, overwriting each time (like a progress bar)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="n">f</span><span class="s1">&#39;Level: </span><span class="si">{n}</span><span class="s1">, Angle: {np.rad2deg(res.x[0]) :.3}, &#39;</span>
+              <span class="n">f</span><span class="s1">&#39;Offset: ({res.x[1] * 2**n :.3}, {res.x[2] * 2**n :.3}), &#39;</span>
+              <span class="n">f</span><span class="s1">&#39;Cost: {res.fun :.3}&#39;</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;</span><span class="se">\r</span><span class="s1">&#39;</span><span class="p">)</span>
+
+    <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;&#39;</span><span class="p">)</span>  <span class="c1"># newline when alignment complete</span>
+    <span class="k">return</span> <span class="n">make_rigid_transform</span><span class="p">(</span><span class="n">p</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Let's try it with our astronaut image. We rotate it by 60 degrees and add some
+noise to it. Can SciPy recover the correct transform?</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">from</span> <span class="nn">skimage</span> <span class="k">import</span> <span class="n">util</span>
+
+<span class="n">theta</span> <span class="o">=</span> <span class="mi">60</span>
+<span class="n">rotated</span> <span class="o">=</span> <span class="n">transform</span><span class="o">.</span><span class="n">rotate</span><span class="p">(</span><span class="n">astronaut</span><span class="p">,</span> <span class="n">theta</span><span class="p">)</span>
+<span class="n">rotated</span> <span class="o">=</span> <span class="n">util</span><span class="o">.</span><span class="n">random_noise</span><span class="p">(</span><span class="n">rotated</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s1">&#39;gaussian&#39;</span><span class="p">,</span>
+                            <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">mean</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">var</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">)</span>
+
+<span class="n">tf</span> <span class="o">=</span> <span class="n">align</span><span class="p">(</span><span class="n">astronaut</span><span class="p">,</span> <span class="n">rotated</span><span class="p">)</span>
+<span class="n">corrected</span> <span class="o">=</span> <span class="n">transform</span><span class="o">.</span><span class="n">warp</span><span class="p">(</span><span class="n">rotated</span><span class="p">,</span> <span class="n">tf</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+
+<span class="n">f</span><span class="p">,</span> <span class="p">(</span><span class="n">ax0</span><span class="p">,</span> <span class="n">ax1</span><span class="p">,</span> <span class="n">ax2</span><span class="p">)</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+<span class="n">ax0</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">astronaut</span><span class="p">)</span>
+<span class="n">ax0</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s1">&#39;Original&#39;</span><span class="p">)</span>
+<span class="n">ax1</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">rotated</span><span class="p">)</span>
+<span class="n">ax1</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s1">&#39;Rotated&#39;</span><span class="p">)</span>
+<span class="n">ax2</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">corrected</span><span class="p">)</span>
+<span class="n">ax2</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s1">&#39;Registered&#39;</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">ax</span> <span class="ow">in</span> <span class="p">(</span><span class="n">ax0</span><span class="p">,</span> <span class="n">ax1</span><span class="p">,</span> <span class="n">ax2</span><span class="p">):</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">axis</span><span class="p">(</span><span class="s1">&#39;off&#39;</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+<div class="output_subarea output_stream output_stdout output_text">
+<pre>Level: 1, Angle: -60.0, Offset: (-1.87e+02, 6.98e+02), Cost: 0.0369
+</pre>
+</div>
+</div>
+</div>
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch7_29_1.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="Optimization used to recover image alignment" -->
+
+<p>We're feeling pretty good now. But our choice of parameters actually masked
+the difficulty of optimization: Let's see what happens with a rotation of
+50 degrees, which is <em>closer</em> to the original image:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">theta</span> <span class="o">=</span> <span class="mi">50</span>
+<span class="n">rotated</span> <span class="o">=</span> <span class="n">transform</span><span class="o">.</span><span class="n">rotate</span><span class="p">(</span><span class="n">astronaut</span><span class="p">,</span> <span class="n">theta</span><span class="p">)</span>
+<span class="n">rotated</span> <span class="o">=</span> <span class="n">util</span><span class="o">.</span><span class="n">random_noise</span><span class="p">(</span><span class="n">rotated</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s1">&#39;gaussian&#39;</span><span class="p">,</span>
+                            <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">mean</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">var</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">)</span>
+
+<span class="n">tf</span> <span class="o">=</span> <span class="n">align</span><span class="p">(</span><span class="n">astronaut</span><span class="p">,</span> <span class="n">rotated</span><span class="p">)</span>
+<span class="n">corrected</span> <span class="o">=</span> <span class="n">transform</span><span class="o">.</span><span class="n">warp</span><span class="p">(</span><span class="n">rotated</span><span class="p">,</span> <span class="n">tf</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+
+<span class="n">f</span><span class="p">,</span> <span class="p">(</span><span class="n">ax0</span><span class="p">,</span> <span class="n">ax1</span><span class="p">,</span> <span class="n">ax2</span><span class="p">)</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+<span class="n">ax0</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">astronaut</span><span class="p">)</span>
+<span class="n">ax0</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s1">&#39;Original&#39;</span><span class="p">)</span>
+<span class="n">ax1</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">rotated</span><span class="p">)</span>
+<span class="n">ax1</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s1">&#39;Rotated&#39;</span><span class="p">)</span>
+<span class="n">ax2</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">corrected</span><span class="p">)</span>
+<span class="n">ax2</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s1">&#39;Registered&#39;</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">ax</span> <span class="ow">in</span> <span class="p">(</span><span class="n">ax0</span><span class="p">,</span> <span class="n">ax1</span><span class="p">,</span> <span class="n">ax2</span><span class="p">):</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">axis</span><span class="p">(</span><span class="s1">&#39;off&#39;</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+<div class="output_subarea output_stream output_stdout output_text">
+<pre>Level: 1, Angle: -0.0535, Offset: (0.419, 43.4), Cost: 0.141
+</pre>
+</div>
+</div>
+</div>
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch7_31_1.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="Failed optimization" -->
+
+<p>Even though we started closer to the original image, we failed to
+recover the correct rotation. This is because optimization techniques can get
+stuck in local minima, little bumps on the road to success, as we saw above
+with the shift-only alignment. They can therefore be quite sensitive to the
+starting parameters.</p>
+<h2 id="Avoiding-local-minima-with-basin-hopping">Avoiding local minima with basin hopping<a class="anchor-link" href="#Avoiding-local-minima-with-basin-hopping"> </a></h2><p>A 1997 algorithm devised by David Wales and Jonathan Doyle <sup class="footnote-ref" id="fnref-basinhop"><a href="#fn-basinhop">1</a></sup>, called
+<em>basin-hopping</em>, attempts to avoid local minima by trying an optimization from
+some initial parameters, then moving away from the found local minimum in a
+random direction, and optimizing again. By choosing an appropriate step size
+for these random moves, the algorithm can avoid falling into the same local
+minimum twice, and thus explore a much larger area of the parameter space than
+simple gradient-based optimization methods.</p>
+<p>We leave it as an exercise to incorporate SciPy's implementation of basin-hopping
+into our alignment function. You'll need it for later parts of the chapter, so
+feel free to peek at the solution at the end of the book if you're stuck.</p>
+<!-- exercise begin -->
+
+<p><strong>Exercise:</strong> Try modifying the <code>align</code> function to use
+<code>scipy.optimize.basinhopping</code>, which has explicit strategies to avoid local minima.</p>
+<p><em>Hint:</em> limit using basin-hopping to just the top levels of the pyramid, as it is
+a slower optimization approach, and could take rather long to run at full image
+resolution.</p>
+<!-- solution begin -->
+
+<p><strong>Solution:</strong> We use basin-hopping at the higher levels of the pyramid, but use
+Powell's method for the lower levels, because basin-hopping is too
+computationally expensive to run at full resolution:</p>
+<div class="footnotes">
+<hr>
+<ol><li id="fn-basinhop"><p>David J. Wales and Jonathan P.K. Doyle (1997). Global Optimization
+by Basin-Hopping and the Lowest Energy Structures of Lennard-Jones
+Clusters Containing up to 110 Atoms.
+<strong>Journal of Physical Chemistry 101(28):5111–5116</strong>
+DOI: 10.1021/jp970984n<a href="#fnref-basinhop" class="footnote">&#8617;</a></p></li>
+</ol>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="k">def</span> <span class="nf">align</span><span class="p">(</span><span class="n">reference</span><span class="p">,</span> <span class="n">target</span><span class="p">,</span> <span class="n">cost</span><span class="o">=</span><span class="n">cost_mse</span><span class="p">,</span> <span class="n">nlevels</span><span class="o">=</span><span class="mi">7</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s1">&#39;Powell&#39;</span><span class="p">):</span>
+    <span class="n">pyramid_ref</span> <span class="o">=</span> <span class="n">gaussian_pyramid</span><span class="p">(</span><span class="n">reference</span><span class="p">,</span> <span class="n">levels</span><span class="o">=</span><span class="n">nlevels</span><span class="p">)</span>
+    <span class="n">pyramid_tgt</span> <span class="o">=</span> <span class="n">gaussian_pyramid</span><span class="p">(</span><span class="n">target</span><span class="p">,</span> <span class="n">levels</span><span class="o">=</span><span class="n">nlevels</span><span class="p">)</span>
+
+    <span class="n">levels</span> <span class="o">=</span> <span class="nb">range</span><span class="p">(</span><span class="n">nlevels</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">image_pairs</span> <span class="o">=</span> <span class="nb">zip</span><span class="p">(</span><span class="n">pyramid_ref</span><span class="p">,</span> <span class="n">pyramid_tgt</span><span class="p">)</span>
+
+    <span class="n">p</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">n</span><span class="p">,</span> <span class="p">(</span><span class="n">ref</span><span class="p">,</span> <span class="n">tgt</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">levels</span><span class="p">,</span> <span class="n">image_pairs</span><span class="p">):</span>
+        <span class="n">p</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">*=</span> <span class="mi">2</span>
+        <span class="k">if</span> <span class="n">method</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span> <span class="o">==</span> <span class="s1">&#39;BH&#39;</span><span class="p">:</span>
+            <span class="n">res</span> <span class="o">=</span> <span class="n">optimize</span><span class="o">.</span><span class="n">basinhopping</span><span class="p">(</span><span class="n">cost</span><span class="p">,</span> <span class="n">p</span><span class="p">,</span>
+                                        <span class="n">minimizer_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s1">&#39;args&#39;</span><span class="p">:</span> <span class="p">(</span><span class="n">ref</span><span class="p">,</span> <span class="n">tgt</span><span class="p">)})</span>
+            <span class="k">if</span> <span class="n">n</span> <span class="o">&lt;=</span> <span class="mi">4</span><span class="p">:</span>  <span class="c1"># avoid basin-hopping in lower levels</span>
+                <span class="n">method</span> <span class="o">=</span> <span class="s1">&#39;Powell&#39;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">res</span> <span class="o">=</span> <span class="n">optimize</span><span class="o">.</span><span class="n">minimize</span><span class="p">(</span><span class="n">cost</span><span class="p">,</span> <span class="n">p</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="n">ref</span><span class="p">,</span> <span class="n">tgt</span><span class="p">),</span> <span class="n">method</span><span class="o">=</span><span class="s1">&#39;Powell&#39;</span><span class="p">)</span>
+        <span class="n">p</span> <span class="o">=</span> <span class="n">res</span><span class="o">.</span><span class="n">x</span>
+        <span class="c1"># print current level, overwriting each time (like a progress bar)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="n">f</span><span class="s1">&#39;Level: </span><span class="si">{n}</span><span class="s1">, Angle: {np.rad2deg(res.x[0]) :.3}, &#39;</span>
+              <span class="n">f</span><span class="s1">&#39;Offset: ({res.x[1] * 2**n :.3}, {res.x[2] * 2**n :.3}), &#39;</span>
+              <span class="n">f</span><span class="s1">&#39;Cost: {res.fun :.3}&#39;</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;</span><span class="se">\r</span><span class="s1">&#39;</span><span class="p">)</span>
+
+    <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;&#39;</span><span class="p">)</span>  <span class="c1"># newline when alignment complete</span>
+    <span class="k">return</span> <span class="n">make_rigid_transform</span><span class="p">(</span><span class="n">p</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Now let's try that alignment:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">from</span> <span class="nn">skimage</span> <span class="k">import</span> <span class="n">util</span>
+
+<span class="n">theta</span> <span class="o">=</span> <span class="mi">50</span>
+<span class="n">rotated</span> <span class="o">=</span> <span class="n">transform</span><span class="o">.</span><span class="n">rotate</span><span class="p">(</span><span class="n">astronaut</span><span class="p">,</span> <span class="n">theta</span><span class="p">)</span>
+<span class="n">rotated</span> <span class="o">=</span> <span class="n">util</span><span class="o">.</span><span class="n">random_noise</span><span class="p">(</span><span class="n">rotated</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s1">&#39;gaussian&#39;</span><span class="p">,</span>
+                            <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">mean</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">var</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">)</span>
+
+<span class="n">tf</span> <span class="o">=</span> <span class="n">align</span><span class="p">(</span><span class="n">astronaut</span><span class="p">,</span> <span class="n">rotated</span><span class="p">,</span> <span class="n">nlevels</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s1">&#39;BH&#39;</span><span class="p">)</span>
+<span class="n">corrected</span> <span class="o">=</span> <span class="n">transform</span><span class="o">.</span><span class="n">warp</span><span class="p">(</span><span class="n">rotated</span><span class="p">,</span> <span class="n">tf</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+
+<span class="n">f</span><span class="p">,</span> <span class="p">(</span><span class="n">ax0</span><span class="p">,</span> <span class="n">ax1</span><span class="p">,</span> <span class="n">ax2</span><span class="p">)</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+<span class="n">ax0</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">astronaut</span><span class="p">)</span>
+<span class="n">ax0</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s1">&#39;Original&#39;</span><span class="p">)</span>
+<span class="n">ax1</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">rotated</span><span class="p">)</span>
+<span class="n">ax1</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s1">&#39;Rotated&#39;</span><span class="p">)</span>
+<span class="n">ax2</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">corrected</span><span class="p">)</span>
+<span class="n">ax2</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s1">&#39;Registered&#39;</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">ax</span> <span class="ow">in</span> <span class="p">(</span><span class="n">ax0</span><span class="p">,</span> <span class="n">ax1</span><span class="p">,</span> <span class="n">ax2</span><span class="p">):</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">axis</span><span class="p">(</span><span class="s1">&#39;off&#39;</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+<div class="output_subarea output_stream output_stdout output_text">
+<pre>Level: 1, Angle: -50.0, Offset: (-2.09e+02, 5.74e+02), Cost: 0.0385
+</pre>
+</div>
+</div>
+</div>
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch7_35_1.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="Image alignment using basin-hopping" -->
+
+<p>Success! Basin-hopping was able to recover the correct alignment, even in the
+problematic case in which the <code>minimize</code> function got stuck.</p>
+<!-- solution end -->
+
+<!-- exercise end -->
+
+<h2 id="&quot;What-is-best?&quot;:-Choosing-the-right-objective-function">"What is best?": Choosing the right objective function<a class="anchor-link" href="#&quot;What-is-best?&quot;:-Choosing-the-right-objective-function"> </a></h2><p>At this point, we have a working registration approach, which is most
+excellent. But it turns out that we've only solved the easiest of registration
+problems: aligning images of the same <em>modality</em>. This means that we expect
+bright pixels in the reference image to match up to bright pixels in the test
+image.</p>
+<p>We now move on to aligning different color channels of the same image,
+where we can no longer rely on the channels having the same modality. This task
+has historical significance: between 1909 and 1915, the photographer Sergei
+Mikhailovich Prokudin-Gorskii produced color photographs of the Russian empire
+before color photography had been invented. He did this by taking three
+different monochrome pictures of a scene, each with a different color filter
+placed in front of the lens.</p>
+<p>Aligning bright pixels together, as the MSE implicitly does, won't work in
+this case. Take, for example, these three pictures of a stained glass window
+in the Church of Saint John the Theologian, taken from the <a href="http://www.loc.gov/pictures/item/prk2000000263/">Library of Congress
+Prokudin-Gorskii Collection</a>:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">from</span> <span class="nn">skimage</span> <span class="k">import</span> <span class="n">io</span>
+<span class="n">stained_glass</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">imread</span><span class="p">(</span><span class="s1">&#39;data/00998v.jpg&#39;</span><span class="p">)</span> <span class="o">/</span> <span class="mi">255</span>  <span class="c1"># use float image in [0, 1]</span>
+<span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mf">4.8</span><span class="p">,</span> <span class="mi">7</span><span class="p">))</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">stained_glass</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">axis</span><span class="p">(</span><span class="s1">&#39;off&#39;</span><span class="p">);</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch7_37_0.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="A Prokudin-Gorskii plate: three photos of the same stained
+glass window, taken with three different filters" -->
+
+<p>Take a look at St John's robes: they look pitch black in one image, gray in
+another, and bright white in the third! This would result in a terrible MSE
+score, even with perfect alignment.</p>
+<p>Let's see what we can do with this. We start by splitting the plate into its
+component channels:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">nrows</span> <span class="o">=</span> <span class="n">stained_glass</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+<span class="n">step</span> <span class="o">=</span> <span class="n">nrows</span> <span class="o">//</span> <span class="mi">3</span>
+<span class="n">channels</span> <span class="o">=</span> <span class="p">(</span><span class="n">stained_glass</span><span class="p">[:</span><span class="n">step</span><span class="p">],</span>
+            <span class="n">stained_glass</span><span class="p">[</span><span class="n">step</span><span class="p">:</span><span class="mi">2</span><span class="o">*</span><span class="n">step</span><span class="p">],</span>
+            <span class="n">stained_glass</span><span class="p">[</span><span class="mi">2</span><span class="o">*</span><span class="n">step</span><span class="p">:</span><span class="mi">3</span><span class="o">*</span><span class="n">step</span><span class="p">])</span>
+<span class="n">channel_names</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;blue&#39;</span><span class="p">,</span> <span class="s1">&#39;green&#39;</span><span class="p">,</span> <span class="s1">&#39;red&#39;</span><span class="p">]</span>
+<span class="n">fig</span><span class="p">,</span> <span class="n">axes</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">ax</span><span class="p">,</span> <span class="n">image</span><span class="p">,</span> <span class="n">name</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">axes</span><span class="p">,</span> <span class="n">channels</span><span class="p">,</span> <span class="n">channel_names</span><span class="p">):</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">image</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">axis</span><span class="p">(</span><span class="s1">&#39;off&#39;</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch7_39_0.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="Splitting the plate into different channels" -->
+
+<p>First, we overlay all three images to verify that the alignment indeed needs to
+be fine-tuned between the three channels:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">blue</span><span class="p">,</span> <span class="n">green</span><span class="p">,</span> <span class="n">red</span> <span class="o">=</span> <span class="n">channels</span>
+<span class="n">original</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">dstack</span><span class="p">((</span><span class="n">red</span><span class="p">,</span> <span class="n">green</span><span class="p">,</span> <span class="n">blue</span><span class="p">))</span>
+<span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mf">4.8</span><span class="p">,</span> <span class="mf">4.8</span><span class="p">),</span> <span class="n">tight_layout</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">original</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">axis</span><span class="p">(</span><span class="s1">&#39;off&#39;</span><span class="p">);</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch7_41_0.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="Naive overlay of Prokudin-Gorskii channels results in color
+halos" -->
+
+<p>You can see by the color "halos" around objects in the image that the colors
+are close to alignment, but not quite. Let's try to align them in the same
+way that we aligned the astronaut image above, using the MSE. We use one color
+channel, green, as the reference image, and align the blue and red channels to
+that.</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="s1">&#39;*** Aligning blue to green ***&#39;</span><span class="p">)</span>
+<span class="n">tf</span> <span class="o">=</span> <span class="n">align</span><span class="p">(</span><span class="n">green</span><span class="p">,</span> <span class="n">blue</span><span class="p">)</span>
+<span class="n">cblue</span> <span class="o">=</span> <span class="n">transform</span><span class="o">.</span><span class="n">warp</span><span class="p">(</span><span class="n">blue</span><span class="p">,</span> <span class="n">tf</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s1">&#39;** Aligning red to green ***&#39;</span><span class="p">)</span>
+<span class="n">tf</span> <span class="o">=</span> <span class="n">align</span><span class="p">(</span><span class="n">green</span><span class="p">,</span> <span class="n">red</span><span class="p">)</span>
+<span class="n">cred</span> <span class="o">=</span> <span class="n">transform</span><span class="o">.</span><span class="n">warp</span><span class="p">(</span><span class="n">red</span><span class="p">,</span> <span class="n">tf</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+
+<span class="n">corrected</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">dstack</span><span class="p">((</span><span class="n">cred</span><span class="p">,</span> <span class="n">green</span><span class="p">,</span> <span class="n">cblue</span><span class="p">))</span>
+<span class="n">f</span><span class="p">,</span> <span class="p">(</span><span class="n">ax0</span><span class="p">,</span> <span class="n">ax1</span><span class="p">)</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+<span class="n">ax0</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">original</span><span class="p">)</span>
+<span class="n">ax0</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s1">&#39;Original&#39;</span><span class="p">)</span>
+<span class="n">ax1</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">corrected</span><span class="p">)</span>
+<span class="n">ax1</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s1">&#39;Corrected&#39;</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">ax</span> <span class="ow">in</span> <span class="p">(</span><span class="n">ax0</span><span class="p">,</span> <span class="n">ax1</span><span class="p">):</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">axis</span><span class="p">(</span><span class="s1">&#39;off&#39;</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+<div class="output_subarea output_stream output_stdout output_text">
+<pre>*** Aligning blue to green ***
+Level: 1, Angle: -0.0474, Offset: (-0.867, 15.4), Cost: 0.0499
+** Aligning red to green ***
+Level: 1, Angle: 0.0339, Offset: (-0.269, -8.88), Cost: 0.0311
+</pre>
+</div>
+</div>
+</div>
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch7_43_1.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="MSE-based alignment reduces but does not eliminate the color
+halos" -->
+
+<p>The alignment is a little bit better than with the raw images, because the red
+and the green channels are correctly aligned, probably thanks to the giant
+yellow patch of sky. However, the blue channel is still off, because the bright
+spots of blue don't coincide with the green channel. That means that the MSE
+will be lower when the channels are <em>mis</em>-aligned so that blue patches overlap
+with some bright green spots.</p>
+<p>We turn instead to a measure called <em>normalized mutual information</em> (NMI),
+which measures correlations between the different brightness bands of the
+different images. When the images are perfectly aligned, any object of uniform
+color will create a large correlation between the shades of the different
+component channels, and a correspondingly large NMI value. In a sense, NMI
+measures how easy it would be to predict a pixel value of one image given the
+value of the corresponding pixel in the other. It was defined in the paper
+"Studholme, C., Hill, D.L.G., Hawkes, D.J., <em>An Overlap Invariant Entropy Measure
+of 3D Medical Image Alignment</em>, Patt. Rec. 32, 71–86 (1999)":</p>
+$$I(X, Y) = \frac{H(X) + H(Y)}{H(X, Y)},$$<p>where $H(X)$ is the <em>entropy</em> of $X$, and $H(X, Y)$ is the joint
+entropy of $X$ and $Y$. The numerator describes the entropy of the
+two images, seen separately, and the denominator the total entropy if
+they are observed together. Values can vary between 1 (maximally
+aligned) and 2 (minimally aligned)<sup class="footnote-ref" id="fnref-mi_calc"><a href="#fn-mi_calc">1</a></sup>. See Chapter 5 for a
+more in-depth discussion of entropy.</p>
+<p>In Python code, this becomes:</p>
+<div class="footnotes">
+<hr>
+<ol><li id="fn-mi_calc"><p>A quick handwavy explanation is that entropy is calculated
+from the histogram of the quantity under consideration.
+If $X = Y$, then the joint histogram $(X, Y)$ is diagonal,
+and that diagonal is the same as that of either $X$ or
+$Y$.  Thus, $H(X) = H(Y) = H(X, Y)$ and $I(X, Y) = 2$.<a href="#fnref-mi_calc" class="footnote">&#8617;</a></p></li>
+</ol>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">from</span> <span class="nn">scipy.stats</span> <span class="k">import</span> <span class="n">entropy</span>
+
+<span class="k">def</span> <span class="nf">normalized_mutual_information</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="n">B</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Compute the normalized mutual information.</span>
+
+<span class="sd">    The normalized mutual information is given by:</span>
+
+<span class="sd">                H(A) + H(B)</span>
+<span class="sd">      Y(A, B) = -----------</span>
+<span class="sd">                  H(A, B)</span>
+
+<span class="sd">    where H(X) is the entropy ``- sum(x log x) for x in X``.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    A, B : ndarray</span>
+<span class="sd">        Images to be registered.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    nmi : float</span>
+<span class="sd">        The normalized mutual information between the two arrays, computed at a</span>
+<span class="sd">        granularity of 100 bins per axis (10,000 bins total).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">hist</span><span class="p">,</span> <span class="n">bin_edges</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">histogramdd</span><span class="p">([</span><span class="n">np</span><span class="o">.</span><span class="n">ravel</span><span class="p">(</span><span class="n">A</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">ravel</span><span class="p">(</span><span class="n">B</span><span class="p">)],</span> <span class="n">bins</span><span class="o">=</span><span class="mi">100</span><span class="p">)</span>
+    <span class="n">hist</span> <span class="o">/=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">hist</span><span class="p">)</span>
+
+    <span class="n">H_A</span> <span class="o">=</span> <span class="n">entropy</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">hist</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">))</span>
+    <span class="n">H_B</span> <span class="o">=</span> <span class="n">entropy</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">hist</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">))</span>
+    <span class="n">H_AB</span> <span class="o">=</span> <span class="n">entropy</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">ravel</span><span class="p">(</span><span class="n">hist</span><span class="p">))</span>
+
+    <span class="k">return</span> <span class="p">(</span><span class="n">H_A</span> <span class="o">+</span> <span class="n">H_B</span><span class="p">)</span> <span class="o">/</span> <span class="n">H_AB</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Now we define a <em>cost function</em> to optimize, as we defined <code>cost_mse</code> above:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="k">def</span> <span class="nf">cost_nmi</span><span class="p">(</span><span class="n">param</span><span class="p">,</span> <span class="n">reference_image</span><span class="p">,</span> <span class="n">target_image</span><span class="p">):</span>
+    <span class="n">transformation</span> <span class="o">=</span> <span class="n">make_rigid_transform</span><span class="p">(</span><span class="n">param</span><span class="p">)</span>
+    <span class="n">transformed</span> <span class="o">=</span> <span class="n">transform</span><span class="o">.</span><span class="n">warp</span><span class="p">(</span><span class="n">target_image</span><span class="p">,</span> <span class="n">transformation</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+    <span class="k">return</span> <span class="o">-</span><span class="n">normalized_mutual_information</span><span class="p">(</span><span class="n">reference_image</span><span class="p">,</span> <span class="n">transformed</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Finally, we use this with our basinhopping-optimizing aligner:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="s1">&#39;*** Aligning blue to green ***&#39;</span><span class="p">)</span>
+<span class="n">tf</span> <span class="o">=</span> <span class="n">align</span><span class="p">(</span><span class="n">green</span><span class="p">,</span> <span class="n">blue</span><span class="p">,</span> <span class="n">cost</span><span class="o">=</span><span class="n">cost_nmi</span><span class="p">)</span>
+<span class="n">cblue</span> <span class="o">=</span> <span class="n">transform</span><span class="o">.</span><span class="n">warp</span><span class="p">(</span><span class="n">blue</span><span class="p">,</span> <span class="n">tf</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s1">&#39;** Aligning red to green ***&#39;</span><span class="p">)</span>
+<span class="n">tf</span> <span class="o">=</span> <span class="n">align</span><span class="p">(</span><span class="n">green</span><span class="p">,</span> <span class="n">red</span><span class="p">,</span> <span class="n">cost</span><span class="o">=</span><span class="n">cost_nmi</span><span class="p">)</span>
+<span class="n">cred</span> <span class="o">=</span> <span class="n">transform</span><span class="o">.</span><span class="n">warp</span><span class="p">(</span><span class="n">red</span><span class="p">,</span> <span class="n">tf</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+
+<span class="n">corrected</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">dstack</span><span class="p">((</span><span class="n">cred</span><span class="p">,</span> <span class="n">green</span><span class="p">,</span> <span class="n">cblue</span><span class="p">))</span>
+<span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mf">4.8</span><span class="p">,</span> <span class="mf">4.8</span><span class="p">),</span> <span class="n">tight_layout</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">corrected</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">axis</span><span class="p">(</span><span class="s1">&#39;off&#39;</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+<div class="output_subarea output_stream output_stdout output_text">
+<pre>*** Aligning blue to green ***
+Level: 1, Angle: 0.444, Offset: (6.07, 0.354), Cost: -1.08
+** Aligning red to green ***
+Level: 1, Angle: 0.000657, Offset: (-0.635, -7.67), Cost: -1.11
+</pre>
+</div>
+</div>
+</div>
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_text output_subarea output_execute_result">
+<pre>(-0.5, 393.5, 340.5, -0.5)</pre>
+</div>
+
+</div>
+</div>
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch7_49_2.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="Prokudin-Gorskii channels aligned with normalized mutual
+information" -->
+
+<p>What a glorious image! Realize that this artifact was created before color
+photography existed! Notice God's pearly white robes, John's white beard,
+and the white pages of the book held by Prochorus, his scribe — all of which
+were missing from the MSE-based alignment, but look wonderfully clear using NMI.
+Notice also the realistic gold of the candlesticks in the foreground.</p>
+<p>We've illustrated the two key concepts in function optimization in this
+chapter: understanding local minima and how to avoid them, and choosing the
+right function to optimize to achieve a particular objective. Solving these
+allows you to apply optimization to a wide array of scientific problems!</p>
+
+</div>
+</div>
+</div>
+</div>
+
+ 
+
+
+    </main>
+    

@@ -1,0 +1,2571 @@
+---
+title: |-
+  Linear algebra in SciPy
+prev_page:
+  url: /ch5.html
+  title: |-
+    Contingency tables using sparse coordinate matrices
+next_page:
+  url: /ch7.html
+  title: |-
+    Function optimization in SciPy
+suffix: .md
+
+comment: "***PROGRAMMATICALLY GENERATED, DO NOT EDIT. SEE ORIGINAL FILES IN /content***"
+---
+
+    <main class="jupyter-page">
+    <div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<h1 id="Linear-algebra-in-SciPy">Linear algebra in SciPy<a class="anchor-link" href="#Linear-algebra-in-SciPy"> </a></h1><blockquote><p>No one can be told what the matrix is. You have to see it for yourself.</p>
+<p>— Morpheus, <em>The Matrix</em></p>
+</blockquote>
+<p>Just like Chapter 4, which dealt with the Fast Fourier Transform, this chapter
+will feature an elegant <em>method</em>. We
+want to highlight the packages available in SciPy to do linear algebra, which forms
+the basis of much scientific computing.</p>
+<h2 id="Linear-algebra-basics">Linear algebra basics<a class="anchor-link" href="#Linear-algebra-basics"> </a></h2><p>A chapter in a programming book is not really the right place to learn about
+linear algebra itself, so we assume familiarity with linear algebra concepts.
+At a minimum, you should know that linear algebra involves vectors (ordered
+collections of numbers) and their transformations by multiplying them with
+matrices (collections of vectors). If all of this sounded like gibberish to
+you, you should probably pick up an introductory linear algebra textbook before
+reading this. We highly recommend Gil Strang's <em>Linear Algebra and its
+Applications</em>. Introductory is all you need though — we hope to convey the power
+of linear algebra while keeping the operations relatively simple!</p>
+<p>As an aside, we will break Python notation convention in order to match linear
+algebra conventions: in Python, variables names should usually begin with a
+lower case letter. However, in linear algebra, matrices are denoted by
+a capital letter, while vectors and scalar values are lowercase. Since we're
+going to be dealing with quite a few matrices and vectors, following the
+linear algebra convention helps to keep them straight. Therefore, variables
+that represent matrices will start with a capital letter, while vectors and
+numbers will start with lowercase:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+
+<span class="n">m</span><span class="p">,</span> <span class="n">n</span> <span class="o">=</span> <span class="p">(</span><span class="mi">5</span><span class="p">,</span> <span class="mi">6</span><span class="p">)</span>  <span class="c1"># scalars</span>
+<span class="n">M</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">((</span><span class="n">m</span><span class="p">,</span> <span class="n">n</span><span class="p">))</span>  <span class="c1"># a matrix</span>
+<span class="n">v</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">random</span><span class="p">((</span><span class="n">n</span><span class="p">,))</span>  <span class="c1"># a vector</span>
+<span class="n">w</span> <span class="o">=</span> <span class="n">M</span> <span class="o">@</span> <span class="n">v</span>  <span class="c1"># another vector</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>In mathematical notation, the vectors would typically be written in boldface,
+as in $\mathbf{v}$ and $\mathbf{w}$, while the scalars would not, as
+in $m$ and $n$.  In Python code, we can't make that distinction, so we will rely instead
+on context to keep scalars and vectors straight.</p>
+<h2 id="Laplacian-matrix-of-a-graph">Laplacian matrix of a graph<a class="anchor-link" href="#Laplacian-matrix-of-a-graph"> </a></h2><p>We discussed graphs in chapter 3, where we represented image regions as
+nodes, connected by edges between them. But we used a rather simple method of
+analysis: we <em>thresholded</em> the graph, removing all edges above some value.
+Thresholding works in simple cases, but can easily fail, because all you need
+is one value to fall on the wrong side of the threshold for the approach
+to fail.</p>
+<p>As an example, suppose you are at war, and your enemy is camped just across the
+river from your forces. You want to cut them off, so you decide to blow up all
+the bridges between you. Intelligence suggests that you need $t$ kilograms of
+TNT to blow each bridge crossing the river, but the bridges in your own
+territory can withstand $t+1$ kg. You might, having just read chapter 3 of
+<em>Elegant SciPy</em>, order your commandos to detonate $t$ kg of TNT on every bridge
+in the region. But, if intelligence was wrong about just <em>one</em> bridge crossing
+the river, and it remains standing, the enemy's army can come marching through!
+Disaster!</p>
+<p>So, in this chapter, we will explore some alternative approaches to graph
+analysis, based on linear algebra. It turns out that we can think of a graph, $G$,
+as an <em>adjacency matrix</em>, in which we number the nodes of the graph from $0$
+to $n-1$, and place a 1 in row $i$, column $j$ of the matrix whenever there is
+an edge from node $i$ to node $j$. In other words, if we call the adjacency
+matrix $A$, then $A_{i, j} = 1$ if and only if the edge $(i, j)$ is in $G$. We
+can then use linear algebra techniques to study this matrix, often with
+striking results.</p>
+<p>The <em>degree</em> of a node is defined as the number of edges touching it.  For
+example, if a node is connected to five other nodes in a graph, its degree
+is 5. (Later, we will differentiate between out-degree and in-degree, when edges
+have a "from" and "to".) In matrix terms, the degree corresponds to the <em>sum</em>
+of the values in a row or column.</p>
+<p>The <em>Laplacian</em> matrix of a graph (just "the Laplacian" for short) is defined
+as the <em>degree matrix</em>, $D$, which
+contains the degree of each node along the diagonal and zero everywhere else,
+minus the adjacency matrix $A$:</p>
+<p>$
+L = D - A
+$</p>
+<p>We definitely can't fit all of the linear algebra theory needed to understand
+the properties of this matrix, but suffice it to say: it has some <em>great</em>
+properties. We will exploit a couple in the following paragraphs.</p>
+<p>First, we will look at the <em>eigenvectors</em> of $L$.
+An eigenvector $v$ of a matrix $M$ is a vector that
+satisfies the property $Mv = \lambda v$ for some number $\lambda$,
+known as the eigenvalue.  In other words, $v$ is a special vector in
+relation to $M$ because $Mv$ simply changes the size of the vector, without
+changing its direction. As we will soon see, eigenvectors have many useful
+properties — sometimes seeming even magical!</p>
+<p>As an example, a 3x3 rotation matrix $R$, when multiplied by any
+3-dimensional vector $p$, rotates it $30^\circ$ degrees around the z-axis.  $R$
+will rotate all vectors except for those that lie <em>on</em> the z-axis.  For those,
+we'll see no effect, or $Rp = p$, i.e. $Rp = \lambda p$ with
+eigenvalue $\lambda = 1$.</p>
+<!-- exercise begin -->
+
+<p><strong>Exercise:</strong> Consider the rotation matrix</p>
+<p>$
+R = \begin{bmatrix}
+  \cos \theta &amp;  -\sin \theta &amp; 0 \\
+  \sin \theta &amp; \cos \theta &amp; 0\\
+  0 &amp; 0 &amp; 1\\
+\end{bmatrix}
+$</p>
+<p>When $R$ is multiplied with a 3-dimensional column-vector $p =
+\left[ x\, y\, z \right]^T$, the resulting vector $R p$ is rotated
+by $\theta$ degrees around the z-axis.</p>
+<ol>
+<li><p>For $\theta = 45^\circ$, verify (by testing on a few arbitrary
+vectors) that $R$ rotates these vectors around the z axis.
+Remember that matrix multiplication in Python is denoted with <code>@</code>.</p>
+</li>
+<li><p>What does the matrix $S = RR$ do? Verify this in Python.</p>
+</li>
+<li><p>Verify that multiplying by $R$ leaves the vector
+$\left[ 0\, 0\, 1\right]^T$ unchanged.  In other words, $R p = 1
+p$, which means $p$ is an eigenvector of $R$ with eigenvalue 1.</p>
+</li>
+<li><p>Use <code>np.linalg.eig</code> to find the eigenvalues and eigenvectors of $R$, and
+verify that $\left[0, 0, 1\right]^T$ is indeed among them, and that it
+corresponds to the eigenvalue 1.</p>
+</li>
+</ol>
+<!-- solution begin -->
+
+<p><strong>Solution:</strong></p>
+<p>Part 1:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+
+<span class="n">theta</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">deg2rad</span><span class="p">(</span><span class="mi">45</span><span class="p">)</span>
+<span class="n">R</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([[</span><span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">theta</span><span class="p">),</span> <span class="o">-</span><span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">theta</span><span class="p">),</span> <span class="mi">0</span><span class="p">],</span>
+              <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">theta</span><span class="p">),</span>  <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">theta</span><span class="p">),</span> <span class="mi">0</span><span class="p">],</span>
+              <span class="p">[</span>            <span class="mi">0</span><span class="p">,</span>              <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">]])</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;R times the x-axis:&quot;</span><span class="p">,</span> <span class="n">R</span> <span class="o">@</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">])</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;R times the y-axis:&quot;</span><span class="p">,</span> <span class="n">R</span> <span class="o">@</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">])</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;R times a 45 degree vector:&quot;</span><span class="p">,</span> <span class="n">R</span> <span class="o">@</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">])</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+<div class="output_subarea output_stream output_stdout output_text">
+<pre>R times the x-axis: [0.70710678 0.70710678 0.        ]
+R times the y-axis: [-0.70710678  0.70710678  0.        ]
+R times a 45 degree vector: [1.11022302e-16 1.41421356e+00 0.00000000e+00]
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Part 2:</p>
+<p>Since multiplying a vector by $R$ rotates it 45 degrees, multiplying the result
+by $R$ again should result in the original vector being rotated 90 degrees.
+Matrix multiplication is associative, which means that $R(Rv) = (RR)v$, so
+$S = RR$ should rotate vectors by 90 degrees around the z-axis.</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">S</span> <span class="o">=</span> <span class="n">R</span> <span class="o">@</span> <span class="n">R</span>
+<span class="n">S</span> <span class="o">@</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_text output_subarea output_execute_result">
+<pre>array([1.99673462e-16, 1.00000000e+00, 0.00000000e+00])</pre>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Part 3:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="s2">&quot;R @ z-axis:&quot;</span><span class="p">,</span> <span class="n">R</span> <span class="o">@</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">])</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+<div class="output_subarea output_stream output_stdout output_text">
+<pre>R @ z-axis: [0. 0. 1.]
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>R rotates both the x and y axes, but not the z-axis.</p>
+<p>Part 4:</p>
+<p>Looking at the documentation of <code>eig</code>, we see that it returns two values:
+a 1D array of eigenvalues, and a 2D array where each column contains the
+eigenvector corresponding to each eigenvalue.</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">eig</span><span class="p">(</span><span class="n">R</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_text output_subarea output_execute_result">
+<pre>(array([0.70710678+0.70710678j, 0.70710678-0.70710678j,
+        1.        +0.j        ]),
+ array([[0.70710678+0.j        , 0.70710678-0.j        ,
+         0.        +0.j        ],
+        [0.        -0.70710678j, 0.        +0.70710678j,
+         0.        +0.j        ],
+        [0.        +0.j        , 0.        -0.j        ,
+         1.        +0.j        ]]))</pre>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>In addition to some complex-valued eigenvalues and vectors, we see the value 1
+associated with the vector $\left[0, 0, 1\right]^T$.</p>
+<!-- solution end -->
+
+<!-- exercise end -->
+
+<p>Back to the Laplacian. A common problem in network analysis is visualization.
+How do you draw nodes and edges in such a way that you don't get a complete
+mess such as this one?</p>
+<p><img src="https://upload.wikimedia.org/wikipedia/commons/9/90/Visualization_of_wiki_structure_using_prefuse_visualization_package.png"/>
+<!-- caption text="Visualization of wikipedia structure. Created by Chris Davis and released under CC-BY-SA-3.0 (https://commons.wikimedia.org/wiki/GNU_Free_Documentation_License)." --></p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>One way is to put nodes that share many edges close together. It turns out
+that this can be done by using the second-smallest eigenvalue of the Laplacian
+matrix, and its corresponding eigenvector, which is so important it has its
+own name: the
+<a href="https://en.wikipedia.org/wiki/Algebraic_connectivity#The_Fiedler_vector">Fiedler vector</a>.</p>
+<p>Let's use a minimal network to illustrate this. We start by creating the
+adjacency matrix:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="n">A</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span>
+              <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span>
+              <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span>
+              <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span>
+              <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span>
+              <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">]],</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>We can use NetworkX to draw this network. First, we initialize matplotlib as
+usual:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="c1"># Make plots appear inline, set custom plotting style</span>
+<span class="o">%</span><span class="k">matplotlib</span> inline
+<span class="kn">import</span> <span class="nn">matplotlib.pyplot</span> <span class="k">as</span> <span class="nn">plt</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">style</span><span class="o">.</span><span class="n">use</span><span class="p">(</span><span class="s1">&#39;style/elegant.mplstyle&#39;</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Now, we can plot it:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">import</span> <span class="nn">networkx</span> <span class="k">as</span> <span class="nn">nx</span>
+<span class="n">g</span> <span class="o">=</span> <span class="n">nx</span><span class="o">.</span><span class="n">from_numpy_matrix</span><span class="p">(</span><span class="n">A</span><span class="p">)</span>
+<span class="n">layout</span> <span class="o">=</span> <span class="n">nx</span><span class="o">.</span><span class="n">spring_layout</span><span class="p">(</span><span class="n">g</span><span class="p">,</span> <span class="n">pos</span><span class="o">=</span><span class="n">nx</span><span class="o">.</span><span class="n">circular_layout</span><span class="p">(</span><span class="n">g</span><span class="p">))</span>
+<span class="n">nx</span><span class="o">.</span><span class="n">draw</span><span class="p">(</span><span class="n">g</span><span class="p">,</span> <span class="n">pos</span><span class="o">=</span><span class="n">layout</span><span class="p">,</span>
+        <span class="n">with_labels</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">node_color</span><span class="o">=</span><span class="s1">&#39;white&#39;</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+<div class="output_subarea output_stream output_stderr output_text">
+<pre>/home/marc/miniconda3/lib/python3.7/site-packages/networkx/drawing/nx_pylab.py:579: MatplotlibDeprecationWarning: 
+The iterable function was deprecated in Matplotlib 3.1 and will be removed in 3.3. Use np.iterable instead.
+  if not cb.iterable(width):
+</pre>
+</div>
+</div>
+</div>
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch6_16_1.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="A simple network plotted with NetworkX" -->
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>You can see that the nodes fall naturally into two groups, 0, 1, 2 and 3, 4, 5.
+Can the Fiedler vector tell us this? First, we must compute the degree matrix
+and the Laplacian. We first get the degrees by summing along either axis of $A$.
+(Either axis works because $A$ is symmetric.)</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">d</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+<div class="output_subarea output_stream output_stdout output_text">
+<pre>[2. 2. 3. 3. 2. 2.]
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>We then put those degrees into a diagonal matrix of the same shape
+as A, the <em>degree matrix</em>. We can use the <code>np.diag</code> function to do this:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">D</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">diag</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">D</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+<div class="output_subarea output_stream output_stdout output_text">
+<pre>[[2. 0. 0. 0. 0. 0.]
+ [0. 2. 0. 0. 0. 0.]
+ [0. 0. 3. 0. 0. 0.]
+ [0. 0. 0. 3. 0. 0.]
+ [0. 0. 0. 0. 2. 0.]
+ [0. 0. 0. 0. 0. 2.]]
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Finally, we get the Laplacian from the definition:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">L</span> <span class="o">=</span> <span class="n">D</span> <span class="o">-</span> <span class="n">A</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">L</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+<div class="output_subarea output_stream output_stdout output_text">
+<pre>[[ 2. -1. -1.  0.  0.  0.]
+ [-1.  2. -1.  0.  0.  0.]
+ [-1. -1.  3. -1.  0.  0.]
+ [ 0.  0. -1.  3. -1. -1.]
+ [ 0.  0.  0. -1.  2. -1.]
+ [ 0.  0.  0. -1. -1.  2.]]
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Because $L$ is symmetric, we can use the <code>np.linalg.eigh</code> function to compute
+the eigenvalues and eigenvectors:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">val</span><span class="p">,</span> <span class="n">Vec</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">eigh</span><span class="p">(</span><span class="n">L</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>You can verify that the values returned satisfy the definition of eigenvalues
+and eigenvectors. For example, one of the eigenvalues is 3:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">np</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">isclose</span><span class="p">(</span><span class="n">val</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_text output_subarea output_execute_result">
+<pre>True</pre>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>And we can check that multiplying the matrix $L$ by the corresponding eigenvector
+does indeed multiply the vector by 3:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">idx_lambda3</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argmin</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">val</span> <span class="o">-</span> <span class="mi">3</span><span class="p">))</span>
+<span class="n">v3</span> <span class="o">=</span> <span class="n">Vec</span><span class="p">[:,</span> <span class="n">idx_lambda3</span><span class="p">]</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="n">v3</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">L</span> <span class="o">@</span> <span class="n">v3</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+<div class="output_subarea output_stream output_stdout output_text">
+<pre>[ 0.76360255 -0.55068122 -0.21292133 -0.21292133  0.09376005  0.11916128]
+[ 2.29080765 -1.65204367 -0.63876398 -0.63876398  0.28128015  0.35748383]
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>As mentioned above, the Fiedler vector is the vector corresponding to the
+second-smallest eigenvalue of $L$. Sorting the eigenvalues tells us which one
+is the second-smallest:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">val</span><span class="p">),</span> <span class="n">linestyle</span><span class="o">=</span><span class="s1">&#39;-&#39;</span><span class="p">,</span> <span class="n">marker</span><span class="o">=</span><span class="s1">&#39;o&#39;</span><span class="p">);</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch6_31_0.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="Eigenvalues of $L$" -->
+
+<p>It's the first non-zero eigenvalue, close to 0.4. The Fiedler vector is the
+corresponding eigenvector:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">f</span> <span class="o">=</span> <span class="n">Vec</span><span class="p">[:,</span> <span class="n">np</span><span class="o">.</span><span class="n">argsort</span><span class="p">(</span><span class="n">val</span><span class="p">)[</span><span class="mi">1</span><span class="p">]]</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">linestyle</span><span class="o">=</span><span class="s1">&#39;-&#39;</span><span class="p">,</span> <span class="n">marker</span><span class="o">=</span><span class="s1">&#39;o&#39;</span><span class="p">);</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch6_33_0.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="Fiedler vector of $L$" -->
+
+<p>It's pretty remarkable: by looking at the <em>sign</em> of the elements of the Fiedler
+vector, we can separate the nodes into the two groups we identified in the
+drawing!</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">colors</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;orange&#39;</span> <span class="k">if</span> <span class="n">eigv</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">else</span> <span class="s1">&#39;gray&#39;</span> <span class="k">for</span> <span class="n">eigv</span> <span class="ow">in</span> <span class="n">f</span><span class="p">]</span>
+<span class="n">nx</span><span class="o">.</span><span class="n">draw</span><span class="p">(</span><span class="n">g</span><span class="p">,</span> <span class="n">pos</span><span class="o">=</span><span class="n">layout</span><span class="p">,</span> <span class="n">with_labels</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">node_color</span><span class="o">=</span><span class="n">colors</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch6_35_0.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="Nodes colored by their sign in the Fiedler vector of $L$" -->
+
+<h2 id="Laplacians-with-brain-data">Laplacians with brain data<a class="anchor-link" href="#Laplacians-with-brain-data"> </a></h2><p>Let's demonstrate this process in a real-world example by laying out the brain cells in a worm, as shown in
+<a href="http://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1001066">Figure 2</a>
+from the
+<a href="http://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1001066">Varshney <em>et al</em> paper</a>
+that we introduced in Chapter 3. (Information on
+how to do this is in the
+<a href="http://journals.plos.org/ploscompbiol/article/asset?unique&amp;id=info:doi/10.1371/journal.pcbi.1001066.s001">supplementary material</a>
+for the paper.) To obtain their
+layout of the worm brain neurons, they used a related matrix, the
+<em>degree-normalized Laplacian</em>.</p>
+<p>Because the order of the neurons is important in this analysis, we will use a
+preprocessed dataset, rather than clutter this chapter with data cleaning. We
+got the original data from Lav Varshney's
+<a href="http://www.ifp.illinois.edu/~varshney/elegans">website</a>,
+and the processed data is in our <code>data/</code> directory.</p>
+<p>First, let's load the data. There are four components:</p>
+<ul>
+<li>the network of chemical synapses, through which a <em>pre-synaptic neuron</em>
+sends a chemical signal to a <em>post-synaptic</em> neuron,</li>
+<li>the gap junction network, which contains direct electrical contacts between
+neurons),</li>
+<li>the neuron IDs (names), and</li>
+<li>the three neuron types:<ul>
+<li><em>sensory neurons</em>, those that detect signals coming from the outside world,
+encoded as 0;</li>
+<li><em>motor neurons</em>, those that activate muscles, enabling the worm to move,
+encoded as 2; and</li>
+<li><em>interneurons</em>, the neurons in between, which enable complex signal processing
+to occur between sensory neurons and motor neurons, encoded as 1.</li>
+</ul>
+</li>
+</ul>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="n">Chem</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="s1">&#39;data/chem-network.npy&#39;</span><span class="p">)</span>
+<span class="n">Gap</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="s1">&#39;data/gap-network.npy&#39;</span><span class="p">)</span>
+<span class="n">neuron_ids</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="s1">&#39;data/neurons.npy&#39;</span><span class="p">)</span>
+<span class="n">neuron_types</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="s1">&#39;data/neuron-types.npy&#39;</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>We then simplify the network, adding the two kinds of connections together,
+and removing the directionality of the network by taking the average of
+in-connections and out-connections of neurons. This seems a bit like cheating
+but, since we are only looking for the <em>layout</em> of the neurons on a graph, we
+only care about <em>whether</em> neurons are connected, not in which direction.
+We are going to call the resulting matrix the <em>connectivity</em> matrix, $C$, which
+is just a different kind of adjacency matrix.</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">A</span> <span class="o">=</span> <span class="n">Chem</span> <span class="o">+</span> <span class="n">Gap</span>
+<span class="n">C</span> <span class="o">=</span> <span class="p">(</span><span class="n">A</span> <span class="o">+</span> <span class="n">A</span><span class="o">.</span><span class="n">T</span><span class="p">)</span> <span class="o">/</span> <span class="mi">2</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>To get the Laplacian matrix $L$, we need the degree matrix $D$, which contains
+the degree of node i at position [i, i], and zeros everywhere else.</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">degrees</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">C</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">D</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">diag</span><span class="p">(</span><span class="n">degrees</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Now, we can get the Laplacian just like before:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">L</span> <span class="o">=</span> <span class="n">D</span> <span class="o">-</span> <span class="n">C</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>The vertical coordinates in Fig 2 are given by arranging nodes such that, on
+average, neurons are as close as possible to "just above" their downstream
+neighbors. Varshney <em>et al</em> call this measure "processing depth," and it's
+obtained by solving a linear equation involving the Laplacian. We use
+<code>scipy.linalg.pinv</code>, the
+<a href="https://en.wikipedia.org/wiki/Moore%E2%80%93Penrose_pseudoinverse">pseudoinverse</a>,
+to solve it:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">from</span> <span class="nn">scipy</span> <span class="k">import</span> <span class="n">linalg</span>
+<span class="n">b</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">C</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sign</span><span class="p">(</span><span class="n">A</span> <span class="o">-</span> <span class="n">A</span><span class="o">.</span><span class="n">T</span><span class="p">),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+<span class="n">z</span> <span class="o">=</span> <span class="n">linalg</span><span class="o">.</span><span class="n">pinv</span><span class="p">(</span><span class="n">L</span><span class="p">)</span> <span class="o">@</span> <span class="n">b</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>(Note the use of the <code>@</code> symbol, which was introduced in Python 3.5 to denote
+matrix multiplication. As we noted in the preface and in Chapter 5, in previous
+versions of Python, you would need to use the function <code>np.dot</code>.)</p>
+<p>In order to obtain the degree-normalized Laplacian, $Q$, we need the inverse
+square root of the $D$ matrix:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">Dinv2</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">diag</span><span class="p">(</span><span class="mi">1</span> <span class="o">/</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">degrees</span><span class="p">))</span>
+<span class="n">Q</span> <span class="o">=</span> <span class="n">Dinv2</span> <span class="o">@</span> <span class="n">L</span> <span class="o">@</span> <span class="n">Dinv2</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Finally, we are able to extract the $x$ coordinates of the neurons to ensure that
+highly-connected neurons remain close: the eigenvector of $Q$ corresponding to
+its second-smallest eigenvalue, normalized by the degrees:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">val</span><span class="p">,</span> <span class="n">Vec</span> <span class="o">=</span> <span class="n">linalg</span><span class="o">.</span><span class="n">eig</span><span class="p">(</span><span class="n">Q</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Note from the documentation of <code>numpy.linalg.eig</code>:</p>
+<blockquote><p>"The eigenvalues are not necessarily ordered."</p>
+</blockquote>
+<p>Although the documentation in SciPy's <code>eig</code> lacks this warning, it remains true
+in this case. We must therefore sort the eigenvalues and the corresponding
+eigenvector columns ourselves:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">smallest_first</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argsort</span><span class="p">(</span><span class="n">val</span><span class="p">)</span>
+<span class="n">val</span> <span class="o">=</span> <span class="n">val</span><span class="p">[</span><span class="n">smallest_first</span><span class="p">]</span>
+<span class="n">Vec</span> <span class="o">=</span> <span class="n">Vec</span><span class="p">[:,</span> <span class="n">smallest_first</span><span class="p">]</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Now we can find the eigenvector we need to compute the affinity coordinates:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">x</span> <span class="o">=</span> <span class="n">Dinv2</span> <span class="o">@</span> <span class="n">Vec</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>(The reasons for using this vector are too long to explain here, but appear in
+the paper's supplementary material, linked above. The short version is that
+choosing this vector minimizes the total length of the links between neurons.)</p>
+<p>There is one small kink that we must address before proceeding: eigenvectors
+are only defined up to a multiplicative constant. This follows simply from the
+definition of an eigenvector: suppose $v$ is an eigenvector of the matrix $M$,
+with corresponding eigenvalue $\lambda$. Then $\alpha v$ is also an eigenvector
+of $M$ for any scalar number $\alpha$,
+because $Mv = \lambda v$ implies $M(\alpha v) = \lambda (\alpha v)$.
+So, it is
+arbitrary whether a software package returns $v$ or $-v$ when asked for the
+eigenvectors of $M$. In order to make sure we reproduce the layout from the
+Varshney <em>et al.</em> paper, we must make sure that the vector is pointing in the
+same direction as theirs, rather than the opposite direction. We do this by
+choosing an arbitrary neuron from their Figure 2, and checking the sign of <code>x</code>
+at that position. We then reverse it if it doesn't match its sign in Figure 2
+of the paper.</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">vc2_index</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argwhere</span><span class="p">(</span><span class="n">neuron_ids</span> <span class="o">==</span> <span class="s1">&#39;VC02&#39;</span><span class="p">)</span>
+<span class="k">if</span> <span class="n">x</span><span class="p">[</span><span class="n">vc2_index</span><span class="p">]</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="o">-</span><span class="n">x</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Now it's just a matter of drawing the nodes and the edges. We color them
+according to the type stored in <code>neuron_types</code>, using the appealing and
+functional "colorblind"
+<a href="http://chrisalbon.com/python/seaborn_color_palettes.html">colorbrewer palette</a>:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">from</span> <span class="nn">matplotlib.colors</span> <span class="k">import</span> <span class="n">ListedColormap</span>
+<span class="kn">from</span> <span class="nn">matplotlib.collections</span> <span class="k">import</span> <span class="n">LineCollection</span>
+
+
+<span class="k">def</span> <span class="nf">plot_connectome</span><span class="p">(</span><span class="n">x_coords</span><span class="p">,</span> <span class="n">y_coords</span><span class="p">,</span> <span class="n">conn_matrix</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span>
+                    <span class="n">labels</span><span class="o">=</span><span class="p">(),</span> <span class="n">types</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">type_names</span><span class="o">=</span><span class="p">(</span><span class="s1">&#39;&#39;</span><span class="p">,),</span>
+                    <span class="n">xlabel</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">,</span> <span class="n">ylabel</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Plot neurons as points connected by lines.</span>
+
+<span class="sd">    Neurons can have different types (up to 6 distinct colors).</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    x_coords, y_coords : array of float, shape (N,)</span>
+<span class="sd">        The x-coordinates and y-coordinates of the neurons.</span>
+<span class="sd">    conn_matrix : array or sparse matrix of float, shape (N, N)</span>
+<span class="sd">        The connectivity matrix, with non-zero entry (i, j) if and only</span>
+<span class="sd">        if node i and node j are connected.</span>
+<span class="sd">    labels : array-like of string, shape (N,), optional</span>
+<span class="sd">        The names of the nodes.</span>
+<span class="sd">    types : array of int, shape (N,), optional</span>
+<span class="sd">        The type (e.g. sensory neuron, interneuron) of each node.</span>
+<span class="sd">    type_names : array-like of string, optional</span>
+<span class="sd">        The name of each value of `types`. For example, if a 0 in</span>
+<span class="sd">        `types` means &quot;sensory neuron&quot;, then `type_names[0]` should</span>
+<span class="sd">        be &quot;sensory neuron&quot;.</span>
+<span class="sd">    xlabel, ylabel : str, optional</span>
+<span class="sd">        Labels for the axes.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">types</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">types</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">x_coords</span><span class="o">.</span><span class="n">shape</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">int</span><span class="p">)</span>
+    <span class="n">ntypes</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">unique</span><span class="p">(</span><span class="n">types</span><span class="p">))</span>
+    <span class="n">colors</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">rcParams</span><span class="p">[</span><span class="s1">&#39;axes.prop_cycle&#39;</span><span class="p">][:</span><span class="n">ntypes</span><span class="p">]</span><span class="o">.</span><span class="n">by_key</span><span class="p">()[</span><span class="s1">&#39;color&#39;</span><span class="p">]</span>
+    <span class="n">cmap</span> <span class="o">=</span> <span class="n">ListedColormap</span><span class="p">(</span><span class="n">colors</span><span class="p">)</span>
+
+    <span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">()</span>
+
+    <span class="c1"># plot neuron locations:</span>
+    <span class="k">for</span> <span class="n">neuron_type</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">ntypes</span><span class="p">):</span>
+        <span class="n">plotting</span> <span class="o">=</span> <span class="p">(</span><span class="n">types</span> <span class="o">==</span> <span class="n">neuron_type</span><span class="p">)</span>
+        <span class="n">pts</span> <span class="o">=</span> <span class="n">ax</span><span class="o">.</span><span class="n">scatter</span><span class="p">(</span><span class="n">x_coords</span><span class="p">[</span><span class="n">plotting</span><span class="p">],</span> <span class="n">y_coords</span><span class="p">[</span><span class="n">plotting</span><span class="p">],</span>
+                         <span class="n">c</span><span class="o">=</span><span class="n">cmap</span><span class="p">(</span><span class="n">neuron_type</span><span class="p">),</span> <span class="n">s</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">zorder</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">pts</span><span class="o">.</span><span class="n">set_label</span><span class="p">(</span><span class="n">type_names</span><span class="p">[</span><span class="n">neuron_type</span><span class="p">])</span>
+
+    <span class="c1"># add text labels:</span>
+    <span class="k">for</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">label</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">x_coords</span><span class="p">,</span> <span class="n">y_coords</span><span class="p">,</span> <span class="n">labels</span><span class="p">):</span>
+        <span class="n">ax</span><span class="o">.</span><span class="n">text</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="s1">&#39;   &#39;</span> <span class="o">+</span> <span class="n">label</span><span class="p">,</span>
+                <span class="n">verticalalignment</span><span class="o">=</span><span class="s1">&#39;center&#39;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">zorder</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+
+    <span class="c1"># plot edges</span>
+    <span class="n">pre</span><span class="p">,</span> <span class="n">post</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nonzero</span><span class="p">(</span><span class="n">conn_matrix</span><span class="p">)</span>
+    <span class="n">links</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([[</span><span class="n">x_coords</span><span class="p">[</span><span class="n">pre</span><span class="p">],</span> <span class="n">x_coords</span><span class="p">[</span><span class="n">post</span><span class="p">]],</span>
+                      <span class="p">[</span><span class="n">y_coords</span><span class="p">[</span><span class="n">pre</span><span class="p">],</span> <span class="n">y_coords</span><span class="p">[</span><span class="n">post</span><span class="p">]]])</span><span class="o">.</span><span class="n">T</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">add_collection</span><span class="p">(</span><span class="n">LineCollection</span><span class="p">(</span><span class="n">links</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;lightgray&#39;</span><span class="p">,</span>
+                                     <span class="n">lw</span><span class="o">=</span><span class="mf">0.3</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">zorder</span><span class="o">=</span><span class="mi">0</span><span class="p">))</span>
+
+    <span class="n">ax</span><span class="o">.</span><span class="n">legend</span><span class="p">(</span><span class="n">scatterpoints</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">6</span><span class="p">)</span>
+
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="n">xlabel</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">8</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="n">ylabel</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">8</span><span class="p">)</span>
+
+    <span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Now, let's use that function to plot the neurons:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">plot_connectome</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">z</span><span class="p">,</span> <span class="n">C</span><span class="p">,</span> <span class="n">labels</span><span class="o">=</span><span class="n">neuron_ids</span><span class="p">,</span> <span class="n">types</span><span class="o">=</span><span class="n">neuron_types</span><span class="p">,</span>
+                <span class="n">type_names</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;sensory neurons&#39;</span><span class="p">,</span> <span class="s1">&#39;interneurons&#39;</span><span class="p">,</span>
+                            <span class="s1">&#39;motor neurons&#39;</span><span class="p">],</span>
+                <span class="n">xlabel</span><span class="o">=</span><span class="s1">&#39;Affinity eigenvector 1&#39;</span><span class="p">,</span> <span class="n">ylabel</span><span class="o">=</span><span class="s1">&#39;Processing depth&#39;</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+<div class="output_subarea output_stream output_stderr output_text">
+<pre>&#39;c&#39; argument looks like a single numeric RGB or RGBA sequence, which should be avoided as value-mapping will have precedence in case its length matches with &#39;x&#39; &amp; &#39;y&#39;.  Please use a 2-D array with a single row if you really want to specify the same RGB or RGBA value for all points.
+&#39;c&#39; argument looks like a single numeric RGB or RGBA sequence, which should be avoided as value-mapping will have precedence in case its length matches with &#39;x&#39; &amp; &#39;y&#39;.  Please use a 2-D array with a single row if you really want to specify the same RGB or RGBA value for all points.
+&#39;c&#39; argument looks like a single numeric RGB or RGBA sequence, which should be avoided as value-mapping will have precedence in case its length matches with &#39;x&#39; &amp; &#39;y&#39;.  Please use a 2-D array with a single row if you really want to specify the same RGB or RGBA value for all points.
+</pre>
+</div>
+</div>
+</div>
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch6_59_1.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="Spectral layout of the neurons of a nematode worm" -->
+
+<p>There you are: a worm brain!
+As discussed in the original paper, you can see the top-down processing from
+sensory neurons to motor neurons through a network of interneurons. You can
+also see two distinct groups of motor neurons: these correspond to the neck
+(left) and body (right) body segments of the worm.</p>
+<!-- exercise begin -->
+
+<p><strong>Exercise:</strong> How do you modify the above code to show the affinity view in
+Figure 2B from the paper?</p>
+<p><!-- solution begin -->
+<strong>Solution:</strong> In the affinity view, instead of using the processing depth on the y-axis,
+we use the normalized third eigenvector of Q, just like we did with x. (And we
+invert it if necessary, just like we did with x!)</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">y</span> <span class="o">=</span> <span class="n">Dinv2</span> <span class="o">@</span> <span class="n">Vec</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">]</span>
+<span class="n">asjl_index</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argwhere</span><span class="p">(</span><span class="n">neuron_ids</span> <span class="o">==</span> <span class="s1">&#39;ASJL&#39;</span><span class="p">)</span>
+<span class="k">if</span> <span class="n">y</span><span class="p">[</span><span class="n">asjl_index</span><span class="p">]</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+    <span class="n">y</span> <span class="o">=</span> <span class="o">-</span><span class="n">y</span>
+
+<span class="n">plot_connectome</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">C</span><span class="p">,</span> <span class="n">labels</span><span class="o">=</span><span class="n">neuron_ids</span><span class="p">,</span> <span class="n">types</span><span class="o">=</span><span class="n">neuron_types</span><span class="p">,</span>
+                <span class="n">type_names</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;sensory neurons&#39;</span><span class="p">,</span> <span class="s1">&#39;interneurons&#39;</span><span class="p">,</span>
+                            <span class="s1">&#39;motor neurons&#39;</span><span class="p">],</span>
+                <span class="n">xlabel</span><span class="o">=</span><span class="s1">&#39;Affinity eigenvector 1&#39;</span><span class="p">,</span>
+                <span class="n">ylabel</span><span class="o">=</span><span class="s1">&#39;Affinity eigenvector 2&#39;</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+<div class="output_subarea output_stream output_stderr output_text">
+<pre>&#39;c&#39; argument looks like a single numeric RGB or RGBA sequence, which should be avoided as value-mapping will have precedence in case its length matches with &#39;x&#39; &amp; &#39;y&#39;.  Please use a 2-D array with a single row if you really want to specify the same RGB or RGBA value for all points.
+&#39;c&#39; argument looks like a single numeric RGB or RGBA sequence, which should be avoided as value-mapping will have precedence in case its length matches with &#39;x&#39; &amp; &#39;y&#39;.  Please use a 2-D array with a single row if you really want to specify the same RGB or RGBA value for all points.
+&#39;c&#39; argument looks like a single numeric RGB or RGBA sequence, which should be avoided as value-mapping will have precedence in case its length matches with &#39;x&#39; &amp; &#39;y&#39;.  Please use a 2-D array with a single row if you really want to specify the same RGB or RGBA value for all points.
+</pre>
+</div>
+</div>
+</div>
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch6_61_1.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="Spectral layout of the neurons of a nematode worm, using two
+spectral dimensions" -->
+
+<!-- solution end -->
+
+<!-- exercise end -->
+
+<!-- exercise begin -->
+
+<h3 id="Challenge:-linear-algebra-with-sparse-matrices">Challenge: linear algebra with sparse matrices<a class="anchor-link" href="#Challenge:-linear-algebra-with-sparse-matrices"> </a></h3><p>The above code uses numpy arrays to hold the matrix and perform
+the necessary computations. Because we are using a small graph of fewer than 300
+nodes, this is feasible. However, for larger graphs, it would fail.</p>
+<p>For example, one might want to analyse the relationships between libraries
+listed on the Python Package Index, or PyPI, which contains over one hundred thousand packages.
+Holding the Laplacian matrix for this graph would take 
+up $8 \left(100 \times 10^3\right)^2 = 8 \times 10^10$ bytes, or 80GB,
+of RAM. If you add to that the adjacency, symmetric adjacency, pseudoinverse,
+and, say, two temporary matrices used during calculations, you climb up to
+480GB, beyond the reach of most desktop computers.</p>
+<p>"Ha!", some of you might be thinking. "Ha! My desktop has 512GB of RAM! It would
+make short work of this so-called 'large' graph!"</p>
+<p>Perhaps. But you might also want to analyze the Association for Computing
+Machinery (ACM) citation graph, a network of over two million scholarly works
+and references. <em>That</em> Laplacian would take up 32 terabytes of RAM.</p>
+<p>However, we know that the dependency and reference graphs are <em>sparse</em>:
+packages usually depend on just a few other packages, not on the whole of PyPI.
+And papers and books usually only reference a few others, too. So we can hold
+the above matrices using the sparse data structures from <code>scipy.sparse</code> (see
+Chapter 5), and use the linear algebra functions in <code>scipy.sparse.linalg</code> to
+compute the values we need.</p>
+<p>Try to explore the documentation in <code>scipy.sparse.linalg</code> to come up with a
+sparse version of the above computation.</p>
+<p>Hint: the pseudoinverse of a sparse matrix is, in general, not sparse, so you
+can't use it here. Similarly, you can't get all the eigenvectors of a sparse
+matrix, because they would together make up a dense matrix.</p>
+<p>You'll find parts of the solution below (and of course in the solutions
+chapter), but we highly recommend that you try it out on your own.</p>
+<!-- solution begin -->
+
+<h3 id="Challenge-accepted">Challenge accepted<a class="anchor-link" href="#Challenge-accepted"> </a></h3><p>For the purposes of this challenge, we are going to use the small connectome
+above, because it's easier to visualise what is going on. In later parts of the
+challenge we'll use these techniques to analyze larger networks.</p>
+<p>First, we start with the adjacency matrix, A, in a sparse matrix format, in
+this case, CSR, which is the most common format for linear algebra. We'll
+append <code>s</code> to the names of all the matrices to indicate that they are sparse.</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">from</span> <span class="nn">scipy</span> <span class="k">import</span> <span class="n">sparse</span>
+<span class="kn">import</span> <span class="nn">scipy.sparse.linalg</span>
+
+<span class="n">As</span> <span class="o">=</span> <span class="n">sparse</span><span class="o">.</span><span class="n">csr_matrix</span><span class="p">(</span><span class="n">A</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>We can create our connectivity matrix in the same way:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">Cs</span> <span class="o">=</span> <span class="p">(</span><span class="n">As</span> <span class="o">+</span> <span class="n">As</span><span class="o">.</span><span class="n">T</span><span class="p">)</span> <span class="o">/</span> <span class="mi">2</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>In order to get the degrees matrix, we can use the "diags" sparse format, which
+stores diagonal and off-diagonal matrices.</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">degrees</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ravel</span><span class="p">(</span><span class="n">Cs</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">))</span>
+<span class="n">Ds</span> <span class="o">=</span> <span class="n">sparse</span><span class="o">.</span><span class="n">diags</span><span class="p">(</span><span class="n">degrees</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Getting the Laplacian is straightforward:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">Ls</span> <span class="o">=</span> <span class="n">Ds</span> <span class="o">-</span> <span class="n">Cs</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Now we want to get the processing depth. Remember that getting the
+pseudo-inverse of the Laplacian matrix is out of the question, because it will
+be a dense matrix (the inverse of a sparse matrix is not generally sparse
+itself). However, we were actually using the pseudo-inverse to compute a
+vector $z$ that would satisfy $L z = b$,
+where $b = C \odot \textrm{sign}\left(A - A^T\right) \mathbf{1}$.
+(You can see this in the supplementary material for Varshney <em>et al</em>.) With
+dense matrices, we can simply use $z = L^+b$. With sparse ones, though, we can
+use one of the <em>solvers</em> (see sidebox, "Solvers") in <code>sparse.linalg.isolve</code> to get the <code>z</code> vector after
+providing <code>L</code> and <code>b</code>, no inversion required!</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">b</span> <span class="o">=</span> <span class="n">Cs</span><span class="o">.</span><span class="n">multiply</span><span class="p">((</span><span class="n">As</span> <span class="o">-</span> <span class="n">As</span><span class="o">.</span><span class="n">T</span><span class="p">)</span><span class="o">.</span><span class="n">sign</span><span class="p">())</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+<span class="n">z</span><span class="p">,</span> <span class="n">error</span> <span class="o">=</span> <span class="n">sparse</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">isolve</span><span class="o">.</span><span class="n">cg</span><span class="p">(</span><span class="n">Ls</span><span class="p">,</span> <span class="n">b</span><span class="p">,</span> <span class="n">maxiter</span><span class="o">=</span><span class="mi">10000</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Finally, we must find the eigenvectors of $Q$, the degree-normalized Laplacian,
+corresponding to its second and third smallest eigenvalues.</p>
+<p>You might recall from Chapter 5 that the numerical data in sparse matrices is
+in the <code>.data</code> attribute. We use that to invert the degrees matrix:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">Dsinv2</span> <span class="o">=</span> <span class="n">Ds</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+<span class="n">Dsinv2</span><span class="o">.</span><span class="n">data</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">/</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">Ds</span><span class="o">.</span><span class="n">data</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Finally, we use SciPy's sparse linear algebra functions to find the desired
+eigenvectors. The $Q$ matrix is symmetric, so we can use the <code>eigsh</code> function,
+specialized for symmetric matrices, to compute them. We use the <code>which</code> keyword
+argument to specify that we want the eigenvectors corresponding to the smallest
+eigenvalues, and <code>k</code> to specify that we need the 3 smallest:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">Qs</span> <span class="o">=</span> <span class="n">Dsinv2</span> <span class="o">@</span> <span class="n">Ls</span> <span class="o">@</span> <span class="n">Dsinv2</span>
+<span class="n">vals</span><span class="p">,</span> <span class="n">Vecs</span> <span class="o">=</span> <span class="n">sparse</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">eigsh</span><span class="p">(</span><span class="n">Qs</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">which</span><span class="o">=</span><span class="s1">&#39;SM&#39;</span><span class="p">)</span>
+<span class="n">sorted_indices</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argsort</span><span class="p">(</span><span class="n">vals</span><span class="p">)</span>
+<span class="n">Vecs</span> <span class="o">=</span> <span class="n">Vecs</span><span class="p">[:,</span> <span class="n">sorted_indices</span><span class="p">]</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Finally, we normalize the eigenvectors to get the x and y coordinates
+(and flip these if necessary):</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">_dsinv</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span> <span class="o">=</span> <span class="p">(</span><span class="n">Dsinv2</span> <span class="o">@</span> <span class="n">Vecs</span><span class="p">)</span><span class="o">.</span><span class="n">T</span>
+<span class="k">if</span> <span class="n">x</span><span class="p">[</span><span class="n">vc2_index</span><span class="p">]</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="o">-</span><span class="n">x</span>
+<span class="k">if</span> <span class="n">y</span><span class="p">[</span><span class="n">asjl_index</span><span class="p">]</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+    <span class="n">y</span> <span class="o">=</span> <span class="o">-</span><span class="n">y</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>(Note that the eigenvector corresponding to the smallest eigenvalue is always a
+vector of all ones, which we're not interested in.)
+We can now reproduce the above plots!</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">plot_connectome</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">z</span><span class="p">,</span> <span class="n">C</span><span class="p">,</span> <span class="n">labels</span><span class="o">=</span><span class="n">neuron_ids</span><span class="p">,</span> <span class="n">types</span><span class="o">=</span><span class="n">neuron_types</span><span class="p">,</span>
+                <span class="n">type_names</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;sensory neurons&#39;</span><span class="p">,</span> <span class="s1">&#39;interneurons&#39;</span><span class="p">,</span>
+                            <span class="s1">&#39;motor neurons&#39;</span><span class="p">],</span>
+                <span class="n">xlabel</span><span class="o">=</span><span class="s1">&#39;Affinity eigenvector 1&#39;</span><span class="p">,</span> <span class="n">ylabel</span><span class="o">=</span><span class="s1">&#39;Processing depth&#39;</span><span class="p">)</span>
+
+<span class="n">plot_connectome</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">C</span><span class="p">,</span> <span class="n">labels</span><span class="o">=</span><span class="n">neuron_ids</span><span class="p">,</span> <span class="n">types</span><span class="o">=</span><span class="n">neuron_types</span><span class="p">,</span>
+                <span class="n">type_names</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;sensory neurons&#39;</span><span class="p">,</span> <span class="s1">&#39;interneurons&#39;</span><span class="p">,</span>
+                            <span class="s1">&#39;motor neurons&#39;</span><span class="p">],</span>
+                <span class="n">xlabel</span><span class="o">=</span><span class="s1">&#39;Affinity eigenvector 1&#39;</span><span class="p">,</span>
+                <span class="n">ylabel</span><span class="o">=</span><span class="s1">&#39;Affinity eigenvector 2&#39;</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+<div class="output_subarea output_stream output_stderr output_text">
+<pre>&#39;c&#39; argument looks like a single numeric RGB or RGBA sequence, which should be avoided as value-mapping will have precedence in case its length matches with &#39;x&#39; &amp; &#39;y&#39;.  Please use a 2-D array with a single row if you really want to specify the same RGB or RGBA value for all points.
+&#39;c&#39; argument looks like a single numeric RGB or RGBA sequence, which should be avoided as value-mapping will have precedence in case its length matches with &#39;x&#39; &amp; &#39;y&#39;.  Please use a 2-D array with a single row if you really want to specify the same RGB or RGBA value for all points.
+&#39;c&#39; argument looks like a single numeric RGB or RGBA sequence, which should be avoided as value-mapping will have precedence in case its length matches with &#39;x&#39; &amp; &#39;y&#39;.  Please use a 2-D array with a single row if you really want to specify the same RGB or RGBA value for all points.
+</pre>
+</div>
+</div>
+</div>
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch6_79_1.png"
+>
+</div>
+
+</div>
+</div>
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+<div class="output_subarea output_stream output_stderr output_text">
+<pre>&#39;c&#39; argument looks like a single numeric RGB or RGBA sequence, which should be avoided as value-mapping will have precedence in case its length matches with &#39;x&#39; &amp; &#39;y&#39;.  Please use a 2-D array with a single row if you really want to specify the same RGB or RGBA value for all points.
+&#39;c&#39; argument looks like a single numeric RGB or RGBA sequence, which should be avoided as value-mapping will have precedence in case its length matches with &#39;x&#39; &amp; &#39;y&#39;.  Please use a 2-D array with a single row if you really want to specify the same RGB or RGBA value for all points.
+&#39;c&#39; argument looks like a single numeric RGB or RGBA sequence, which should be avoided as value-mapping will have precedence in case its length matches with &#39;x&#39; &amp; &#39;y&#39;.  Please use a 2-D array with a single row if you really want to specify the same RGB or RGBA value for all points.
+</pre>
+</div>
+</div>
+</div>
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch6_79_3.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="Spectral layout of a nematode brain, computed using sparse
+matrices" -->
+
+<!-- solution end -->
+
+<!-- exercise end -->
+
+<blockquote><p><strong>Solvers {.callout}</strong></p>
+<p>SciPy has several sparse iterative solvers available, and it is not always
+obvious which to use.  Unfortunately, that question also has no easy answer:
+different algorithms have different strengths in terms of speed of
+convergence, stability, accuracy, and memory use (amongst others).  It is also
+not possible to predict, by looking at the input data, which algorithm will
+perform best.</p>
+<p>Here is a rough guideline for choosing an iterative solver:</p>
+<ul>
+<li><p>If A, the input matrix, is symmetric and positive definite, use the
+Conjugate Gradient solver <code>cg</code>.  If A is symmetric, but
+near-singular or indefinite, try the Minimum Residual iteration
+method <code>minres</code>.</p>
+</li>
+<li><p>For non-symmetric systems, try the Biconjugate Gradient Stabilized
+method, <code>bicgstab</code>.  The Conjugate Gradient Squared method, <code>cgs</code>,
+is a bit faster, but has more erratic convergence.</p>
+</li>
+<li><p>If you need to solve many similar systems, use the LGMRES algorithm <code>lgmres</code>.</p>
+</li>
+<li><p>If A is not square, use the least squares algorithm <code>lsmr</code>.</p>
+</li>
+</ul>
+<p>For further reading, see</p>
+<ul>
+<li><p><strong>How Fast are Nonsymmetric Matrix Iterations?</strong>,
+Noël M. Nachtigal, Satish C. Reddy, and Lloyd N. Trefethen
+SIAM Journal on Matrix Analysis and Applications 1992 13:3, 778-795.</p>
+</li>
+<li><p><strong>Survey of recent Krylov methods</strong>, Jack Dongarra,
+<a href="http://www.netlib.org/linalg/html_templates/node50.html">http://www.netlib.org/linalg/html_templates/node50.html</a></p>
+</li>
+</ul>
+</blockquote>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<h2 id="PageRank:-linear-algebra-for-reputation-and-importance">PageRank: linear algebra for reputation and importance<a class="anchor-link" href="#PageRank:-linear-algebra-for-reputation-and-importance"> </a></h2><p>Another application of linear algebra and eigenvectors is Google's PageRank
+algorithm, which is punnily named both for webpages and for one of its
+co-founders, Larry Page.</p>
+<p>To rank webpages by importance, you might count
+how many other webpages link to it. After all, if everyone is linking to a
+particular page, it must be good, right? But this metric is
+easily gamed: to make your own webpage rise in the rankings, just
+create as many other webpages as you can and have them all link to your
+original page.</p>
+<p>The key insight that drove Google's early success was that important webpages
+are not linked to by just many webpages, but by <em>important</em>
+webpages. And how do we know that those other pages are important? Because
+they themselves are linked to by important pages. And so on.</p>
+<p>This recursive definition implies that page
+importance can be measured by an eigenvector
+of the so-called <em>transition matrix</em>, which contains the links
+between webpages. Suppose you have your vector of importance $\boldsymbol{r}$,
+and your matrix of links $M$. You don't know $\boldsymbol{r}$ yet, but you
+do know that the importance of a page is proportional to the sum of
+importances of the pages that link to it: $\boldsymbol{r} = \alpha M \boldsymbol{r}$,
+or $M \boldsymbol{r} = \lambda \boldsymbol{r}$, for $\lambda = 1/\alpha$. That's
+just the definition of an eigenvalue!</p>
+<p>By ensuring some special properties are satisfied by the transition matrix, we
+can further determine that the required eigenvalue is 1, and that it is the
+largest eigenvalue of $M$.</p>
+<p>The transition matrix imagines a web
+surfer, often named Webster, randomly clicking a link from each webpage he
+visits, and then asks, what's the probability that he ends up at any given
+page? This probability is called the PageRank.</p>
+<p>Since Google's rise, researchers have been applying PageRank to all sorts of
+networks. We'll use an example by Stefano Allesina and Mercedes Pascual,
+which they
+<a href="http://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1000494i">published</a>
+in PLoS Computational Biology. They thought to apply the method in ecological
+<em>food webs</em>, networks that link species to those that they eat.</p>
+<p>Naively, if you wanted to see how critical a species was for an ecosystem, you
+would look at how many species eat it. If it's many, and that species
+disappeared, then all its "dependent" species might disappear with it. In
+network parlance, you could say that its <em>in-degree</em> determines its ecological
+importance.</p>
+<p>Could PageRank be a better measure of importance for an ecosystem?</p>
+<p>Professor Allesina kindly provided us with a few food webs to play around
+with. We've saved one of these, from the St Marks National Wildlife Refuge in
+Florida, in the Graph Markup Language format. The web was
+<a href="http://www.sciencedirect.com/science/article/pii/S0304380099000228">described</a>
+in 1999 by Robert R. Christian and Joseph J. Luczovich. In the dataset, a
+node $i$ has an edge to node $j$ if species $i$ eats species $j$.</p>
+<p>We'll start by loading in the data, which NetworkX knows how to read trivially:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">import</span> <span class="nn">networkx</span> <span class="k">as</span> <span class="nn">nx</span>
+
+<span class="n">stmarks</span> <span class="o">=</span> <span class="n">nx</span><span class="o">.</span><span class="n">read_gml</span><span class="p">(</span><span class="s1">&#39;data/stmarks.gml&#39;</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Next, we get the sparse matrix corresponding to the graph. Because a matrix
+only holds numerical information, we need to maintain a separate list of
+package names corresponding to the matrix rows/columns:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">species</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">stmarks</span><span class="o">.</span><span class="n">nodes</span><span class="p">()))</span>  <span class="c1"># array for multi-indexing</span>
+<span class="n">Adj</span> <span class="o">=</span> <span class="n">nx</span><span class="o">.</span><span class="n">to_scipy_sparse_matrix</span><span class="p">(</span><span class="n">stmarks</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>From the adjacency matrix, we can derive a <em>transition probability</em> matrix,
+where every edge is replaced by a <em>probability</em> of 1 over the number of
+outgoing edges from that species. In the food web, it might make more sense
+to call this a lunch probability matrix.</p>
+<p>The total number of species in our matrix is going to be used a lot, so let's
+call it $n$:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">n</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">species</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Next, we need the degrees, and, in particular, the <em>diagonal matrix</em> containing
+the inverse of the out-degrees of each node on the diagonal:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">np</span><span class="o">.</span><span class="n">seterr</span><span class="p">(</span><span class="n">divide</span><span class="o">=</span><span class="s1">&#39;ignore&#39;</span><span class="p">)</span>  <span class="c1"># ignore division-by-zero errors</span>
+<span class="kn">from</span> <span class="nn">scipy</span> <span class="k">import</span> <span class="n">sparse</span>
+
+<span class="n">degrees</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ravel</span><span class="p">(</span><span class="n">Adj</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">))</span>
+<span class="n">Deginv</span> <span class="o">=</span> <span class="n">sparse</span><span class="o">.</span><span class="n">diags</span><span class="p">(</span><span class="mi">1</span> <span class="o">/</span> <span class="n">degrees</span><span class="p">)</span><span class="o">.</span><span class="n">tocsr</span><span class="p">()</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">Trans</span> <span class="o">=</span> <span class="p">(</span><span class="n">Deginv</span> <span class="o">@</span> <span class="n">Adj</span><span class="p">)</span><span class="o">.</span><span class="n">T</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Normally, the PageRank score would simply be the first eigenvector of the
+transition matrix. If we call the transition matrix $M$ and the vector of
+PageRank values $r$, we have:</p>
+$$
+\boldsymbol{r} = M\boldsymbol{r}
+$$<p>But the <code>np.seterr</code> call above is a clue that it's not quite
+so simple. The PageRank approach only works when the
+transition matrix is a <em>column-stochastic</em> matrix, in which every
+column sums to 1. Additionally, every page must be reachable
+from every other page, even if the path to reach it is very long.</p>
+<p>In our food web, this causes problems, because the bottom of the food chain,
+what the authors call <em>detritus</em> (basically sea sludge), doesn't actually <em>eat</em>
+anything (the Circle of Life notwithstanding), so you can't reach other species
+from it.</p>
+<blockquote><p><em>Young Simba:</em> But, Dad, don't we eat the antelope?</p>
+<p><em>Mufasa:</em> Yes, Simba, but let me explain. When we die, our bodies become the
+grass, and the antelope eat the grass. And so we are all connected in the
+great Circle of Life.</p>
+<p>— <em>The Lion King</em></p>
+</blockquote>
+<p>To deal with this, the PageRank algorithm uses a so-called "damping
+factor", usually taken to be 0.85. This means that 85% of the time, the
+algorithm follows a link at random, but for the other 15%, it randomly jumps to
+any arbitrary page. It's as if every page had a low probability link to every
+other page. Or, in our case, it's as if shrimp, on rare occasions, ate sharks.
+It might seem non-sensical but bear with us! It is, in fact, the mathematical
+representation of the Circle of Life. We'll set it to 0.85, but actually it
+doesn't really matter for this analysis: the results are similar for a large
+range of possible damping factors.</p>
+<p>If we call the damping factor $d$, then the modified PageRank equation is:</p>
+$$
+\boldsymbol{r} = dM\boldsymbol{r} + \frac{1-d}{n} \boldsymbol{1}
+$$<p>and</p>
+$$
+(\boldsymbol{I} - dM)\boldsymbol{r} = \frac{1-d}{n} \boldsymbol{1}
+$$<p>We can solve this equation using <code>scipy.sparse.linalg</code>'s direct
+solver, <code>spsolve</code>. Depending on the structure and size of a linear algebra
+problem, though, it might be more efficient to use an iterative solver. See
+the <a href="http://docs.scipy.org/doc/scipy/reference/sparse.linalg.html#solving-linear-problems"><code>scipy.sparse.linalg</code> documentation</a>
+for more information on this.</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">from</span> <span class="nn">scipy.sparse.linalg</span> <span class="k">import</span> <span class="n">spsolve</span>
+
+<span class="n">damping</span> <span class="o">=</span> <span class="mf">0.85</span>
+<span class="n">beta</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">-</span> <span class="n">damping</span>
+
+<span class="n">I</span> <span class="o">=</span> <span class="n">sparse</span><span class="o">.</span><span class="n">eye</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s1">&#39;csc&#39;</span><span class="p">)</span>  <span class="c1"># Same sparse format as Trans</span>
+
+<span class="n">pagerank</span> <span class="o">=</span> <span class="n">spsolve</span><span class="p">(</span><span class="n">I</span> <span class="o">-</span> <span class="n">damping</span> <span class="o">*</span> <span class="n">Trans</span><span class="p">,</span>
+                   <span class="n">np</span><span class="o">.</span><span class="n">full</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">beta</span> <span class="o">/</span> <span class="n">n</span><span class="p">))</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>We now have the "foodrank" of the St. Marks food web!</p>
+<p>So how does a species' foodrank compare to the number of other species eating
+it?</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="k">def</span> <span class="nf">pagerank_plot</span><span class="p">(</span><span class="n">in_degrees</span><span class="p">,</span> <span class="n">pageranks</span><span class="p">,</span> <span class="n">names</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span>
+                  <span class="n">annotations</span><span class="o">=</span><span class="p">[],</span> <span class="o">**</span><span class="n">figkwargs</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Plot node pagerank against in-degree, with hand-picked node names.&quot;&quot;&quot;</span>
+
+    <span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="o">**</span><span class="n">figkwargs</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">scatter</span><span class="p">(</span><span class="n">in_degrees</span><span class="p">,</span> <span class="n">pageranks</span><span class="p">,</span> <span class="n">c</span><span class="o">=</span><span class="p">[</span><span class="mf">0.835</span><span class="p">,</span> <span class="mf">0.369</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span> <span class="n">lw</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">indeg</span><span class="p">,</span> <span class="n">pr</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">names</span><span class="p">,</span> <span class="n">in_degrees</span><span class="p">,</span> <span class="n">pageranks</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">annotations</span><span class="p">:</span>
+            <span class="n">text</span> <span class="o">=</span> <span class="n">ax</span><span class="o">.</span><span class="n">text</span><span class="p">(</span><span class="n">indeg</span> <span class="o">+</span> <span class="mf">0.1</span><span class="p">,</span> <span class="n">pr</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_ylim</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">pageranks</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1.1</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_xlim</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">in_degrees</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1.1</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s1">&#39;PageRank&#39;</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s1">&#39;In-degree&#39;</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>We now draw the plot. Having explored the dataset before writing this, we have
+pre-labeled some interesting nodes in the plot:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">interesting</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;detritus&#39;</span><span class="p">,</span> <span class="s1">&#39;phytoplankton&#39;</span><span class="p">,</span> <span class="s1">&#39;benthic algae&#39;</span><span class="p">,</span> <span class="s1">&#39;micro-epiphytes&#39;</span><span class="p">,</span>
+               <span class="s1">&#39;microfauna&#39;</span><span class="p">,</span> <span class="s1">&#39;zooplankton&#39;</span><span class="p">,</span> <span class="s1">&#39;predatory shrimps&#39;</span><span class="p">,</span> <span class="s1">&#39;meiofauna&#39;</span><span class="p">,</span>
+               <span class="s1">&#39;gulls&#39;</span><span class="p">]</span>
+<span class="n">in_degrees</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ravel</span><span class="p">(</span><span class="n">Adj</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">))</span>
+<span class="n">pagerank_plot</span><span class="p">(</span><span class="n">in_degrees</span><span class="p">,</span> <span class="n">pagerank</span><span class="p">,</span> <span class="n">species</span><span class="p">,</span> <span class="n">annotations</span><span class="o">=</span><span class="n">interesting</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+<div class="output_subarea output_stream output_stderr output_text">
+<pre>&#39;c&#39; argument looks like a single numeric RGB or RGBA sequence, which should be avoided as value-mapping will have precedence in case its length matches with &#39;x&#39; &amp; &#39;y&#39;.  Please use a 2-D array with a single row if you really want to specify the same RGB or RGBA value for all points.
+</pre>
+</div>
+</div>
+</div>
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch6_95_1.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Sea sludge ("detritus") is the most important element both by number of
+species feeding on it (15) and by PageRank (&gt;0.003). But the second most
+important element is <em>not</em> benthic algae, which feeds 13 other species, but
+rather phytoplankton, which feeds just 7! That's because other <em>important</em>
+species feed on it. On the bottom left, we've got sea gulls, who, we can now
+confirm, do bugger-all for the ecosystem. Those vicious <em>predatory shrimps</em>
+(we're not making this up) support the same number of species as phytoplankton,
+but they are less essential species, so they end up with a lower foodrank.</p>
+<p>Although we won't do it here, Allesina and Pascual go on to model the
+ecological impact of species extinction, and indeed find that PageRank
+predicts ecological importance better than in-degree.</p>
+<p>Before we wrap up though, we'll note that PageRank can be computed several
+different ways. One way, complementary to what we did above, is called the
+<em>power method</em>, and it's quite, well, powerful! It stems from the
+<a href="https://en.wikipedia.org/wiki/Perron%E2%80%93Frobenius_theorem">Perron-Frobenius theorem</a>,
+which states, among other things, that a stochastic matrix has 1 as an
+eigenvalue, and that this is its <em>largest</em> eigenvalue. (The corresponding
+eigenvector is the PageRank vector.) What this means is that, whenever we
+multiply <em>any</em> vector by $M$, its component pointing towards this major
+eigenvector stays the same, while <em>all other components shrink</em> by a
+multiplicative factor. The consequence is that if we multiply some random
+starting vector by $M$ repeatedly, we should eventually get the PageRank
+vector!</p>
+<p>SciPy makes this very efficient with its sparse matrix module:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="k">def</span> <span class="nf">power</span><span class="p">(</span><span class="n">Trans</span><span class="p">,</span> <span class="n">damping</span><span class="o">=</span><span class="mf">0.85</span><span class="p">,</span> <span class="n">max_iter</span><span class="o">=</span><span class="mi">10</span><span class="o">**</span><span class="mi">5</span><span class="p">):</span>
+    <span class="n">n</span> <span class="o">=</span> <span class="n">Trans</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">r0</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">full</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="mi">1</span><span class="o">/</span><span class="n">n</span><span class="p">)</span>
+    <span class="n">r</span> <span class="o">=</span> <span class="n">r0</span>
+    <span class="k">for</span> <span class="n">_iter_num</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">max_iter</span><span class="p">):</span>
+        <span class="n">rnext</span> <span class="o">=</span> <span class="n">damping</span> <span class="o">*</span> <span class="n">Trans</span> <span class="o">@</span> <span class="n">r</span> <span class="o">+</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">damping</span><span class="p">)</span> <span class="o">/</span> <span class="n">n</span>
+        <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">rnext</span><span class="p">,</span> <span class="n">r</span><span class="p">):</span>
+            <span class="k">break</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="n">rnext</span>
+    <span class="k">return</span> <span class="n">r</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- exercise begin -->
+
+<p><strong>Exercise:</strong> In the above iteration, note that <code>Trans</code> is <em>not</em>
+column-stochastic, so the $r$ vector gets shrunk at each iteration. In order to
+make the matrix stochastic, we have to replace every zero-column by a column of
+all $1/n$. This is too expensive, but computing the iteration is cheaper. How
+can you modify the code above to ensure that $r$ remains a probability vector
+throughout?</p>
+<!-- solution begin -->
+
+<p><strong>Solution:</strong> In order to have a stochastic matrix, all columns of the
+transition matrix must sum to 1. This is not satisfied when a species isn't
+eaten by any others: that column will consist of all zeroes. Replacing all
+those columns by $1/n \boldsymbol{1}$, however, would be expensive.</p>
+<p>The key is to realise that <em>every row</em> will contribute the <em>same amount</em> to the
+multiplication of the transition matrix by the current probability vector. That
+is to say, adding these columns will add a single value to the result of the
+iteration multiplication. What value? $1/n$ times the elements of $r$ that
+correspond to a dangling node. This can be expressed as a dot-product of a
+vector containing $1/n$ for positions corresponding to dangling nodes, and zero
+elswhere, with the vector $r$ for the current iteration.</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="k">def</span> <span class="nf">power2</span><span class="p">(</span><span class="n">Trans</span><span class="p">,</span> <span class="n">damping</span><span class="o">=</span><span class="mf">0.85</span><span class="p">,</span> <span class="n">max_iter</span><span class="o">=</span><span class="mi">10</span><span class="o">**</span><span class="mi">5</span><span class="p">):</span>
+    <span class="n">n</span> <span class="o">=</span> <span class="n">Trans</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">dangling</span> <span class="o">=</span> <span class="p">(</span><span class="mi">1</span><span class="o">/</span><span class="n">n</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">ravel</span><span class="p">(</span><span class="n">Trans</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)</span>
+    <span class="n">r0</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">full</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="mi">1</span><span class="o">/</span><span class="n">n</span><span class="p">)</span>
+    <span class="n">r</span> <span class="o">=</span> <span class="n">r0</span>
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">max_iter</span><span class="p">):</span>
+        <span class="n">rnext</span> <span class="o">=</span> <span class="p">(</span><span class="n">damping</span> <span class="o">*</span> <span class="p">(</span><span class="n">Trans</span> <span class="o">@</span> <span class="n">r</span> <span class="o">+</span> <span class="n">dangling</span> <span class="o">@</span> <span class="n">r</span><span class="p">)</span> <span class="o">+</span>
+                 <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">damping</span><span class="p">)</span> <span class="o">/</span> <span class="n">n</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">rnext</span><span class="p">,</span> <span class="n">r</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">rnext</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">r</span> <span class="o">=</span> <span class="n">rnext</span>
+    <span class="k">return</span> <span class="n">r</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Try this out manually for a few iterations. Notice that if you start with a
+stochastic vector (a vector whose elements all sum to 1), the next vector will
+still be a stochastic vector. Thus, the output PageRank from this function will
+be a true probability vector, and the values will represent the probability
+that we end up at a particular species when following links in the food chain.</p>
+<!-- solution end -->
+
+<!-- exercise end -->
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- exercise begin -->
+
+<p><strong>Exercise:</strong> Verify that these three methods all give the same ranking for the
+nodes. <code>numpy.corrcoef</code> might be a useful function for this.</p>
+<!-- solution begin -->
+
+<p><strong>Solution:</strong> <code>np.corrcoef</code> gives the Pearson correlation coefficient between
+all pairs of a list of vectors. This coefficient will be equal to 1 if and only
+if two vectors are scalar multiples of each other. Therefore, a correlation
+coefficient of 1 is sufficient to show that the above methods produce the same
+ranking.</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">pagerank_power</span> <span class="o">=</span> <span class="n">power</span><span class="p">(</span><span class="n">Trans</span><span class="p">)</span>
+<span class="n">pagerank_power2</span> <span class="o">=</span> <span class="n">power2</span><span class="p">(</span><span class="n">Trans</span><span class="p">)</span>
+<span class="n">np</span><span class="o">.</span><span class="n">corrcoef</span><span class="p">([</span><span class="n">pagerank</span><span class="p">,</span> <span class="n">pagerank_power</span><span class="p">,</span> <span class="n">pagerank_power2</span><span class="p">])</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_text output_subarea output_execute_result">
+<pre>array([[1., 1., 1.],
+       [1., 1., 1.],
+       [1., 1., 1.]])</pre>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- solution end -->
+
+<!-- exercise end -->
+
+<h2 id="Concluding-remarks">Concluding remarks<a class="anchor-link" href="#Concluding-remarks"> </a></h2><p>The field of linear algebra is far too broad to adequately cover in a chapter,
+but this chapter gave you a glimpse into its power, and of
+the way Python, NumPy, and SciPy make its elegant algorithms accessible.</p>
+
+</div>
+</div>
+</div>
+</div>
+
+ 
+
+
+    </main>
+    

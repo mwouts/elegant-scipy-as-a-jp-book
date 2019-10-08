@@ -1,0 +1,1188 @@
+---
+title: |-
+  Quantile Normalization with NumPy and SciPy
+prev_page:
+  url: /ch1.html
+  title: |-
+    Elegant NumPy: The Foundation of Scientific Python
+next_page:
+  url: /ch3.html
+  title: |-
+    Networks of Image Regions with ndimage
+suffix: .md
+
+comment: "***PROGRAMMATICALLY GENERATED, DO NOT EDIT. SEE ORIGINAL FILES IN /content***"
+---
+
+    <main class="jupyter-page">
+    <div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<h1 id="Quantile-Normalization-with-NumPy-and-SciPy">Quantile Normalization with NumPy and SciPy<a class="anchor-link" href="#Quantile-Normalization-with-NumPy-and-SciPy"> </a></h1><blockquote><p>Distress not yourself if you cannot at first understand the deeper mysteries
+of Spaceland. By degrees they will dawn upon you.</p>
+<p>— Edwin A. Abbott, <em>Flatland: A Romance of Many Dimensions</em></p>
+</blockquote>
+<p>In this chapter, we will continue to analyze the gene expression data from Chapter 1, but with a slightly different purpose: we want to use each patient's <em>gene expression profile</em> (the full vector of their gene expression measurements) to predict their expected survival.
+In order to use full profiles, we need a stronger normalization than what Chapter 1's RPKM provides.
+We will instead perform <a href="https://en.wikipedia.org/wiki/Quantile_normalization"><em>quantile normalization</em></a>, a technique that ensures measurements fit a specific distribution.
+This method enforces a strong assumption: if the data are not distributed according to a desired shape, we just make it fit!
+This might feel a bit like cheating, but it turns out to be simple and useful in many cases where the specific distribution doesn't matter, but the relative changes of values within a population are important.
+For example, Bolstad and colleagues <a href="https://doi.org/10.1093/bioinformatics/19.2.185">showed</a> that it performs admirably in recovering known expression levels in microarray data.</p>
+<p>Over the course of the chapter, we will reproduce a simplified version of <a href="http://www.cell.com/action/showImagesData?pii=S0092-8674%2815%2900634-0">Figures 5A and 5B</a> from this <a href="http://dx.doi.org/10.1016/j.cell.2015.05.044">paper</a>, which comes from The Cancer Genome Atlas (TCGA) project.</p>
+<p>Our implementation of quantile normalization uses NumPy and SciPy effectively to produce a function that is fast, efficient, and elegant. Quantile normalization involves three steps:</p>
+<ul>
+<li>Sort the values along each column,</li>
+<li>Find the average of each resulting row, and</li>
+<li>Replace each column quantile with the quantile of the average column.</li>
+</ul>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">from</span> <span class="nn">scipy</span> <span class="k">import</span> <span class="n">stats</span>
+
+<span class="k">def</span> <span class="nf">quantile_norm</span><span class="p">(</span><span class="n">X</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Normalize the columns of X to each have the same distribution.</span>
+
+<span class="sd">    Given an expression matrix (microarray data, read counts, etc) of M genes</span>
+<span class="sd">    by N samples, quantile normalization ensures all samples have the same</span>
+<span class="sd">    spread of data (by construction).</span>
+
+<span class="sd">    The data across each row are averaged to obtain an average column. Each</span>
+<span class="sd">    column quantile is replaced with the corresponding quantile of the average</span>
+<span class="sd">    column.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    X : 2D array of float, shape (M, N)</span>
+<span class="sd">        The input data, with M rows (genes/features) and N columns (samples).</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    Xn : 2D array of float, shape (M, N)</span>
+<span class="sd">        The normalized data.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># compute the quantiles</span>
+    <span class="n">quantiles</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+
+    <span class="c1"># compute the column-wise ranks. Each observation is replaced with its</span>
+    <span class="c1"># rank in that column: the smallest observation is replaced by 1, the</span>
+    <span class="c1"># second-smallest by 2, ..., and the largest by M, the number of rows.</span>
+    <span class="n">ranks</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">apply_along_axis</span><span class="p">(</span><span class="n">stats</span><span class="o">.</span><span class="n">rankdata</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">X</span><span class="p">)</span>
+
+    <span class="c1"># convert ranks to integer indices from 0 to M-1</span>
+    <span class="n">rank_indices</span> <span class="o">=</span> <span class="n">ranks</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">int</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span>
+
+    <span class="c1"># index the quantiles for each rank with the ranks matrix</span>
+    <span class="n">Xn</span> <span class="o">=</span> <span class="n">quantiles</span><span class="p">[</span><span class="n">rank_indices</span><span class="p">]</span>
+
+    <span class="k">return</span><span class="p">(</span><span class="n">Xn</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Due to the kind of variability of gene expression count data, it is common practice to log-transform the data before quantile-normalizing.
+Thus, we write an additional helper function to transform to log:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="k">def</span> <span class="nf">quantile_norm_log</span><span class="p">(</span><span class="n">X</span><span class="p">):</span>
+    <span class="n">logX</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">X</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="n">logXn</span> <span class="o">=</span> <span class="n">quantile_norm</span><span class="p">(</span><span class="n">logX</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">logXn</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Together, these two functions illustrate many of the things that make NumPy powerful (you will remember the first three of these moves from chapter 1):</p>
+<ol>
+<li>Arrays can be one-dimensional, like lists, but they can also be two-dimensional, like matrices, and higher-dimensional still. This allows them to represent many different kinds of numerical data. In our case, we are representing a 2D matrix.</li>
+<li>Arrays allow the expression of many numerical operations at once. In the  first line of <code>quantile_norm_log</code>, we add one and take the logarithm for every value in <code>X</code> in a single call. This is called <em>vectorization</em>.</li>
+<li>Arrays can be operated on along <em>axes</em>. In the first line of <code>quantile_norm</code>, we sort the data along each column just by specifying an <code>axis</code> parameter to <code>np.sort</code>. We then take the mean along each row by specifying a <em>different</em> <code>axis</code>.</li>
+<li>Arrays underpin the scientific Python ecosystem. The <code>scipy.stats.rankdata</code> function operates not on Python lists, but on NumPy arrays. This is true of many scientific libraries in Python.</li>
+<li>Even functions that don't have an <code>axis=</code> keyword can be made to operate along axes by NumPy's <code>apply_along_axis</code> function.</li>
+<li>Arrays support many kinds of data manipulation through <em>fancy indexing</em>:
+<code>Xn = quantiles[ranks]</code>. This is possibly the trickiest part of NumPy, but
+also among the most useful. We will explore it further in the text that
+follows.</li>
+</ol>
+<h2 id="Getting-the-Data">Getting the Data<a class="anchor-link" href="#Getting-the-Data"> </a></h2><p>As in Chapter 1, we will be working with the The Cancer Genome Atlas (TCGA) skin cancer RNAseq dataset.
+Our goal is to predict mortality in skin cancer patients using their RNA expression data.
+As mentioned earlier, by the end of this chapter we will have reproduced a simplified version of <a href="http://www.cell.com/action/showImagesData?pii=S0092-8674%2815%2900634-0">Figures 5A and 5B</a> of a <a href="http://dx.doi.org/10.1016/j.cell.2015.05.044">paper</a> from the TCGA consortium.</p>
+<p>As in Chapter 1, first we will use pandas to make our job of reading in the data much easier.
+First we will read in our counts data as a pandas table.</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">import</span> <span class="nn">bz2</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
+
+<span class="c1"># Import TCGA melanoma data</span>
+<span class="n">filename</span> <span class="o">=</span> <span class="s1">&#39;data/counts.txt.bz2&#39;</span>
+<span class="k">with</span> <span class="n">bz2</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="n">filename</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s1">&#39;rt&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+    <span class="n">data_table</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_csv</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">index_col</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>  <span class="c1"># Parse file with pandas</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="n">data_table</span><span class="o">.</span><span class="n">iloc</span><span class="p">[:</span><span class="mi">5</span><span class="p">,</span> <span class="p">:</span><span class="mi">5</span><span class="p">])</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+<div class="output_subarea output_stream output_stdout output_text">
+<pre>       00624286-41dd-476f-a63b-d2a5f484bb45  TCGA-FS-A1Z0  TCGA-D9-A3Z1  \
+A1BG                                1272.36        452.96        288.06   
+A1CF                                   0.00          0.00          0.00   
+A2BP1                                  0.00          0.00          0.00   
+A2LD1                                164.38        552.43        201.83   
+A2ML1                                 27.00          0.00          0.00   
+
+       02c76d24-f1d2-4029-95b4-8be3bda8fdbe  TCGA-EB-A51B  
+A1BG                                 400.11        420.46  
+A1CF                                   1.00          0.00  
+A2BP1                                  0.00          1.00  
+A2LD1                                165.12         95.75  
+A2ML1                                  0.00          8.00  
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Looking at the rows and columns of <code>data_table</code>, we can see that the
+columns are the samples, and the rows are the genes.
+Now let's put our counts in a NumPy array.</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="c1"># 2D ndarray containing expression counts for each gene in each individual</span>
+<span class="n">counts</span> <span class="o">=</span> <span class="n">data_table</span><span class="o">.</span><span class="n">values</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<h2 id="Gene-Expression-Distribution-Differences-Between-Individuals">Gene Expression Distribution Differences Between Individuals<a class="anchor-link" href="#Gene-Expression-Distribution-Differences-Between-Individuals"> </a></h2><p>Now, let's get a feel for our counts data by plotting the distribution of counts for each individual.
+We will use a Gaussian kernel to smooth out bumps in our data so we can get a
+better idea of the overall shape.</p>
+<p>First, as usual, we set our plotting style:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="c1"># Make plots appear inline, set custom plotting style</span>
+<span class="o">%</span><span class="k">matplotlib</span> inline
+<span class="kn">import</span> <span class="nn">matplotlib.pyplot</span> <span class="k">as</span> <span class="nn">plt</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">style</span><span class="o">.</span><span class="n">use</span><span class="p">(</span><span class="s1">&#39;style/elegant.mplstyle&#39;</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Next, we write a plotting function that makes use of SciPy's <code>gaussian_kde</code> function to plot smooth distributions:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">from</span> <span class="nn">scipy</span> <span class="k">import</span> <span class="n">stats</span>
+
+<span class="k">def</span> <span class="nf">plot_col_density</span><span class="p">(</span><span class="n">data</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;For each column, produce a density plot over all rows.&quot;&quot;&quot;</span>
+
+    <span class="c1"># Use Gaussian smoothing to estimate the density</span>
+    <span class="n">density_per_col</span> <span class="o">=</span> <span class="p">[</span><span class="n">stats</span><span class="o">.</span><span class="n">gaussian_kde</span><span class="p">(</span><span class="n">col</span><span class="p">)</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">T</span><span class="p">]</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">min</span><span class="p">(</span><span class="n">data</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">data</span><span class="p">),</span> <span class="mi">100</span><span class="p">)</span>
+
+    <span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">density</span> <span class="ow">in</span> <span class="n">density_per_col</span><span class="p">:</span>
+        <span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">density</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s1">&#39;Data values (per column)&#39;</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s1">&#39;Density&#39;</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Now, we can use that function to plot the distributions of the raw data,
+before we have done any normalization:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="c1"># Before normalization</span>
+<span class="n">log_counts</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">counts</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+<span class="n">plot_col_density</span><span class="p">(</span><span class="n">log_counts</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch2_13_0.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="Density of gene expression counts for each individual (log scale)" -->
+
+<p>We can see that while the distributions of counts are broadly similar,
+some individuals have flatter distributions and a few are pushed right over to the left.
+In fact, realizing that this is a log scale, the location of the peak of the
+distributions actually varies over an order of magnitude!
+When doing our analysis of the counts data later in this chapter, we will be assuming
+that changes in gene expression are due to biological differences between our samples.
+But a major distribution shift like this suggests that the differences are technical.
+That is, the changes are likely due to differences in the way we processed each sample,
+rather than due to biological variation.
+So we will try to normalize out these global differences between individuals.</p>
+<p>To do this normalization, we will perform quantile normalization, as described
+at the start of the chapter.  The idea is that all our samples should have a
+similar distribution, so any differences in the shape should be due to some
+technical variation.  More formally, given an expression matrix (microarray
+data, read counts, etc) of shape <code>(n_genes, n_samples)</code>, quantile normalization
+ensures that all samples (columns) have the same spread of data by construction.</p>
+<p>With NumPy and SciPy, this can be done easily and efficiently.
+To recap, here is our quantile normalization implementation, which we introduced at the beginning of the chapter.</p>
+<p>Let's assume we've read in the input matrix as X:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">from</span> <span class="nn">scipy</span> <span class="k">import</span> <span class="n">stats</span>
+
+<span class="k">def</span> <span class="nf">quantile_norm</span><span class="p">(</span><span class="n">X</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Normalize the columns of X to each have the same distribution.</span>
+
+<span class="sd">    Given an expression matrix (microarray data, read counts, etc) of M genes</span>
+<span class="sd">    by N samples, quantile normalization ensures all samples have the same</span>
+<span class="sd">    spread of data (by construction).</span>
+
+<span class="sd">    The data across each row are averaged to obtain an average column. Each</span>
+<span class="sd">    column quantile is replaced with the corresponding quantile of the average</span>
+<span class="sd">    column.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    X : 2D array of float, shape (M, N)</span>
+<span class="sd">        The input data, with M rows (genes/features) and N columns (samples).</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    Xn : 2D array of float, shape (M, N)</span>
+<span class="sd">        The normalized data.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># compute the quantiles</span>
+    <span class="n">quantiles</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+
+    <span class="c1"># compute the column-wise ranks. Each observation is replaced with its</span>
+    <span class="c1"># rank in that column: the smallest observation is replaced by 1, the</span>
+    <span class="c1"># second-smallest by 2, ..., and the largest by M, the number of rows.</span>
+    <span class="n">ranks</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">apply_along_axis</span><span class="p">(</span><span class="n">stats</span><span class="o">.</span><span class="n">rankdata</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">X</span><span class="p">)</span>
+
+    <span class="c1"># convert ranks to integer indices from 0 to M-1</span>
+    <span class="n">rank_indices</span> <span class="o">=</span> <span class="n">ranks</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">int</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span>
+
+    <span class="c1"># index the quantiles for each rank with the ranks matrix</span>
+    <span class="n">Xn</span> <span class="o">=</span> <span class="n">quantiles</span><span class="p">[</span><span class="n">rank_indices</span><span class="p">]</span>
+
+    <span class="k">return</span><span class="p">(</span><span class="n">Xn</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">quantile_norm_log</span><span class="p">(</span><span class="n">X</span><span class="p">):</span>
+    <span class="n">logX</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">X</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="n">logXn</span> <span class="o">=</span> <span class="n">quantile_norm</span><span class="p">(</span><span class="n">logX</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">logXn</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Now, let's see what our distributions look like after quantile normalization.</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="c1"># After normalization</span>
+<span class="n">log_counts_normalized</span> <span class="o">=</span> <span class="n">quantile_norm_log</span><span class="p">(</span><span class="n">counts</span><span class="p">)</span>
+
+<span class="n">plot_col_density</span><span class="p">(</span><span class="n">log_counts_normalized</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch2_17_0.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="Density of gene expression counts for each individual after quantile normalization (log scale)" -->
+
+<p>As you might expect, the distributions now look virtually identical!
+(The different left tails of the distribution have to do with different
+numbers of ties for low count values — 0, 1, 2, ... — in the different
+columns of the data.)</p>
+<p>Now that we have normalized our counts, we can start using our gene expression data to predict patient prognosis.</p>
+<h2 id="Biclustering-the-Counts-Data">Biclustering the Counts Data<a class="anchor-link" href="#Biclustering-the-Counts-Data"> </a></h2>
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Clustering the samples tells us which samples have similar gene expression profiles, which may indicate similar characteristics of the samples on other scales.
+Now that the data are normalized, we can cluster the genes (rows) and samples (columns) of the expression matrix.
+Clustering the rows tells us which genes' expression values are linked, which is an indication that they work together in the process being studied.
+<em>Biclustering</em> means that we are simultaneously clustering both the rows and columns of our data.
+By clustering along the rows we find out with genes are working together, and by clustering along the columns we find out which samples are similar.</p>
+<p>Because clustering can be an expensive operation, we will limit our analysis to the 1,500 genes that are most variable, since these will account for most of the correlation signal in either dimension.</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="k">def</span> <span class="nf">most_variable_rows</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="mi">1500</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Subset data to the n most variable rows</span>
+
+<span class="sd">    In this case, we want the n most variable genes.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    data : 2D array of float</span>
+<span class="sd">        The data to be subset</span>
+<span class="sd">    n : int, optional</span>
+<span class="sd">        Number of rows to return.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    variable_data : 2D array of float</span>
+<span class="sd">        The `n` rows of `data` that exhibit the most variance.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># compute variance along the columns axis</span>
+    <span class="n">rowvar</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">var</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="c1"># Get sorted indices (ascending order), take the last n</span>
+    <span class="n">sort_indices</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argsort</span><span class="p">(</span><span class="n">rowvar</span><span class="p">)[</span><span class="o">-</span><span class="n">n</span><span class="p">:]</span>
+    <span class="c1"># use as index for data</span>
+    <span class="n">variable_data</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">sort_indices</span><span class="p">,</span> <span class="p">:]</span>
+    <span class="k">return</span> <span class="n">variable_data</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Next, we need a function to bicluster the data.
+Normally, you would use a sophisticated clustering algorithm from the <a href="http://scikit-learn.org">scikit-learn</a> library for this.
+In our case, we want to use hierarchical clustering for simplicity and ease of display.
+The SciPy library happens to have a perfectly good hierarchical clustering module, though it requires a bit of wrangling to get your head around its interface.</p>
+<p>As a reminder, hierarchical clustering is a method to group observations using sequential merging of clusters:
+initially, every observation is its own cluster.
+Then, the two nearest clusters are repeatedly merged, and then the next two,
+and so on, until every observation is in a single cluster.
+This sequence of merges forms a <em>merge tree</em>.
+By cutting the tree at a specific height, we can get a finer or coarser clustering of observations.</p>
+<p>The <code>linkage</code> function in <code>scipy.cluster.hierarchy</code> performs a hierarchical clustering of the rows of a matrix, using a particular metric (for example, Euclidean distance, Manhattan distance, or others) and a particular linkage method, the distance between two clusters (for example, the average distance between all the observations in a pair of clusters).</p>
+<p>It returns the merge tree as a "linkage matrix," which contains each merge operation along with the distance computed for the merge and the number of observations in the resulting cluster. From the <code>linkage</code> documentation:</p>
+<blockquote><p>A cluster with an index less than $n$ corresponds to one of
+the $n$ original observations. The distance between
+clusters <code>Z[i, 0]</code> and <code>Z[i, 1]</code> is given by <code>Z[i, 2]</code>. The
+fourth value <code>Z[i, 3]</code> represents the number of original
+observations in the newly formed cluster.</p>
+</blockquote>
+<p>Whew! That's a lot of information, but let's dive right in and hopefully you'll get the hang of it rather quickly.
+First, we define a function, <code>bicluster</code>, that clusters both the rows <em>and</em> the columns of a matrix:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">from</span> <span class="nn">scipy.cluster.hierarchy</span> <span class="k">import</span> <span class="n">linkage</span>
+
+
+<span class="k">def</span> <span class="nf">bicluster</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">linkage_method</span><span class="o">=</span><span class="s1">&#39;average&#39;</span><span class="p">,</span> <span class="n">distance_metric</span><span class="o">=</span><span class="s1">&#39;correlation&#39;</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Cluster the rows and the columns of a matrix.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    data : 2D ndarray</span>
+<span class="sd">        The input data to bicluster.</span>
+<span class="sd">    linkage_method : string, optional</span>
+<span class="sd">        Method to be passed to `linkage`.</span>
+<span class="sd">    distance_metric : string, optional</span>
+<span class="sd">        Distance metric to use for clustering. See the documentation</span>
+<span class="sd">        for ``scipy.spatial.distance.pdist`` for valid metrics.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    y_rows : linkage matrix</span>
+<span class="sd">        The clustering of the rows of the input data.</span>
+<span class="sd">    y_cols : linkage matrix</span>
+<span class="sd">        The clustering of the cols of the input data.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">y_rows</span> <span class="o">=</span> <span class="n">linkage</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="n">linkage_method</span><span class="p">,</span> <span class="n">metric</span><span class="o">=</span><span class="n">distance_metric</span><span class="p">)</span>
+    <span class="n">y_cols</span> <span class="o">=</span> <span class="n">linkage</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">T</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="n">linkage_method</span><span class="p">,</span> <span class="n">metric</span><span class="o">=</span><span class="n">distance_metric</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">y_rows</span><span class="p">,</span> <span class="n">y_cols</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Simple: we just call <code>linkage</code> for the input matrix and also for the <em>transpose</em> of that matrix, in which columns become rows and rows become columns.</p>
+<h2 id="Visualizing-Clusters">Visualizing Clusters<a class="anchor-link" href="#Visualizing-Clusters"> </a></h2><p>Next, we define a function to visualize the output of that clustering.
+We are going to rearrange the rows and columns of the input data so that similar rows are together and similar columns are together.
+And we are additionally going to show the merge tree for both rows and columns, displaying which observations belong together for each.
+The merge trees are presented as dendrograms, with the branch-lengths indicating how similar the observations are to each other (shorter = more similar).</p>
+<p>As a word of warning, there is a fair bit of hard-coding of parameters going on here.
+This is difficult to avoid for plotting, where design is often a matter of eyeballing to find the correct proportions.</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">from</span> <span class="nn">scipy.cluster.hierarchy</span> <span class="k">import</span> <span class="n">dendrogram</span><span class="p">,</span> <span class="n">leaves_list</span>
+
+
+<span class="k">def</span> <span class="nf">clear_spines</span><span class="p">(</span><span class="n">axes</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">loc</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;left&#39;</span><span class="p">,</span> <span class="s1">&#39;right&#39;</span><span class="p">,</span> <span class="s1">&#39;top&#39;</span><span class="p">,</span> <span class="s1">&#39;bottom&#39;</span><span class="p">]:</span>
+        <span class="n">axes</span><span class="o">.</span><span class="n">spines</span><span class="p">[</span><span class="n">loc</span><span class="p">]</span><span class="o">.</span><span class="n">set_visible</span><span class="p">(</span><span class="kc">False</span><span class="p">)</span>
+    <span class="n">axes</span><span class="o">.</span><span class="n">set_xticks</span><span class="p">([])</span>
+    <span class="n">axes</span><span class="o">.</span><span class="n">set_yticks</span><span class="p">([])</span>
+
+
+<span class="k">def</span> <span class="nf">plot_bicluster</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">row_linkage</span><span class="p">,</span> <span class="n">col_linkage</span><span class="p">,</span>
+                   <span class="n">row_nclusters</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">col_nclusters</span><span class="o">=</span><span class="mi">3</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Perform a biclustering, plot a heatmap with dendrograms on each axis.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    data : array of float, shape (M, N)</span>
+<span class="sd">        The input data to bicluster.</span>
+<span class="sd">    row_linkage : array, shape (M-1, 4)</span>
+<span class="sd">        The linkage matrix for the rows of `data`.</span>
+<span class="sd">    col_linkage : array, shape (N-1, 4)</span>
+<span class="sd">        The linkage matrix for the columns of `data`.</span>
+<span class="sd">    n_clusters_r, n_clusters_c : int, optional</span>
+<span class="sd">        Number of clusters for rows and columns.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">fig</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mf">4.8</span><span class="p">,</span> <span class="mf">4.8</span><span class="p">))</span>
+
+    <span class="c1"># Compute and plot row-wise dendrogram</span>
+    <span class="c1"># `add_axes` takes a &quot;rectangle&quot; input to add a subplot to a figure.</span>
+    <span class="c1"># The figure is considered to have side-length 1 on each side, and its</span>
+    <span class="c1"># bottom-left corner is at (0, 0).</span>
+    <span class="c1"># The measurements passed to `add_axes` are the left, bottom, width, and</span>
+    <span class="c1"># height of the subplot. Thus, to draw the left dendrogram (for the rows),</span>
+    <span class="c1"># we create a rectangle whose bottom-left corner is at (0.09, 0.1), and</span>
+    <span class="c1"># measuring 0.2 in width and 0.6 in height.</span>
+    <span class="n">ax1</span> <span class="o">=</span> <span class="n">fig</span><span class="o">.</span><span class="n">add_axes</span><span class="p">([</span><span class="mf">0.09</span><span class="p">,</span> <span class="mf">0.1</span><span class="p">,</span> <span class="mf">0.2</span><span class="p">,</span> <span class="mf">0.6</span><span class="p">])</span>
+    <span class="c1"># For a given number of clusters, we can obtain a cut of the linkage</span>
+    <span class="c1"># tree by looking at the corresponding distance annotation in the linkage</span>
+    <span class="c1"># matrix.</span>
+    <span class="n">threshold_r</span> <span class="o">=</span> <span class="p">(</span><span class="n">row_linkage</span><span class="p">[</span><span class="o">-</span><span class="n">row_nclusters</span><span class="p">,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">+</span>
+                   <span class="n">row_linkage</span><span class="p">[</span><span class="o">-</span><span class="n">row_nclusters</span><span class="o">+</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">])</span> <span class="o">/</span> <span class="mi">2</span>
+    <span class="k">with</span> <span class="n">plt</span><span class="o">.</span><span class="n">rc_context</span><span class="p">({</span><span class="s1">&#39;lines.linewidth&#39;</span><span class="p">:</span> <span class="mf">0.75</span><span class="p">}):</span>
+        <span class="n">dendrogram</span><span class="p">(</span><span class="n">row_linkage</span><span class="p">,</span> <span class="n">orientation</span><span class="o">=</span><span class="s1">&#39;left&#39;</span><span class="p">,</span>
+                   <span class="n">color_threshold</span><span class="o">=</span><span class="n">threshold_r</span><span class="p">,</span> <span class="n">ax</span><span class="o">=</span><span class="n">ax1</span><span class="p">)</span>
+    <span class="n">clear_spines</span><span class="p">(</span><span class="n">ax1</span><span class="p">)</span>
+
+    <span class="c1"># Compute and plot column-wise dendrogram</span>
+    <span class="c1"># See notes above for explanation of parameters to `add_axes`</span>
+    <span class="n">ax2</span> <span class="o">=</span> <span class="n">fig</span><span class="o">.</span><span class="n">add_axes</span><span class="p">([</span><span class="mf">0.3</span><span class="p">,</span> <span class="mf">0.71</span><span class="p">,</span> <span class="mf">0.6</span><span class="p">,</span> <span class="mf">0.2</span><span class="p">])</span>
+    <span class="n">threshold_c</span> <span class="o">=</span> <span class="p">(</span><span class="n">col_linkage</span><span class="p">[</span><span class="o">-</span><span class="n">col_nclusters</span><span class="p">,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">+</span>
+                   <span class="n">col_linkage</span><span class="p">[</span><span class="o">-</span><span class="n">col_nclusters</span><span class="o">+</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">])</span> <span class="o">/</span> <span class="mi">2</span>
+    <span class="k">with</span> <span class="n">plt</span><span class="o">.</span><span class="n">rc_context</span><span class="p">({</span><span class="s1">&#39;lines.linewidth&#39;</span><span class="p">:</span> <span class="mf">0.75</span><span class="p">}):</span>
+        <span class="n">dendrogram</span><span class="p">(</span><span class="n">col_linkage</span><span class="p">,</span> <span class="n">color_threshold</span><span class="o">=</span><span class="n">threshold_c</span><span class="p">,</span> <span class="n">ax</span><span class="o">=</span><span class="n">ax2</span><span class="p">)</span>
+    <span class="n">clear_spines</span><span class="p">(</span><span class="n">ax2</span><span class="p">)</span>
+
+    <span class="c1"># Plot data heatmap</span>
+    <span class="n">ax</span> <span class="o">=</span> <span class="n">fig</span><span class="o">.</span><span class="n">add_axes</span><span class="p">([</span><span class="mf">0.3</span><span class="p">,</span> <span class="mf">0.1</span><span class="p">,</span> <span class="mf">0.6</span><span class="p">,</span> <span class="mf">0.6</span><span class="p">])</span>
+
+    <span class="c1"># Sort data by the dendrogram leaves</span>
+    <span class="n">idx_rows</span> <span class="o">=</span> <span class="n">leaves_list</span><span class="p">(</span><span class="n">row_linkage</span><span class="p">)</span>
+    <span class="n">data</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">idx_rows</span><span class="p">,</span> <span class="p">:]</span>
+    <span class="n">idx_cols</span> <span class="o">=</span> <span class="n">leaves_list</span><span class="p">(</span><span class="n">col_linkage</span><span class="p">)</span>
+    <span class="n">data</span> <span class="o">=</span> <span class="n">data</span><span class="p">[:,</span> <span class="n">idx_cols</span><span class="p">]</span>
+
+    <span class="n">im</span> <span class="o">=</span> <span class="n">ax</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">aspect</span><span class="o">=</span><span class="s1">&#39;auto&#39;</span><span class="p">,</span> <span class="n">origin</span><span class="o">=</span><span class="s1">&#39;lower&#39;</span><span class="p">,</span> <span class="n">cmap</span><span class="o">=</span><span class="s1">&#39;YlGnBu_r&#39;</span><span class="p">)</span>
+    <span class="n">clear_spines</span><span class="p">(</span><span class="n">ax</span><span class="p">)</span>
+
+    <span class="c1"># Axis labels</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s1">&#39;Samples&#39;</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s1">&#39;Genes&#39;</span><span class="p">,</span> <span class="n">labelpad</span><span class="o">=</span><span class="mi">125</span><span class="p">)</span>
+
+    <span class="c1"># Plot legend</span>
+    <span class="n">axcolor</span> <span class="o">=</span> <span class="n">fig</span><span class="o">.</span><span class="n">add_axes</span><span class="p">([</span><span class="mf">0.91</span><span class="p">,</span> <span class="mf">0.1</span><span class="p">,</span> <span class="mf">0.02</span><span class="p">,</span> <span class="mf">0.6</span><span class="p">])</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">colorbar</span><span class="p">(</span><span class="n">im</span><span class="p">,</span> <span class="n">cax</span><span class="o">=</span><span class="n">axcolor</span><span class="p">)</span>
+
+    <span class="c1"># display the plot</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Now we apply these functions to our normalized counts matrix to display row and column clusterings.</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">counts_log</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">counts</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+<span class="n">counts_var</span> <span class="o">=</span> <span class="n">most_variable_rows</span><span class="p">(</span><span class="n">counts_log</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="mi">1500</span><span class="p">)</span>
+<span class="n">yr</span><span class="p">,</span> <span class="n">yc</span> <span class="o">=</span> <span class="n">bicluster</span><span class="p">(</span><span class="n">counts_var</span><span class="p">,</span> <span class="n">linkage_method</span><span class="o">=</span><span class="s1">&#39;ward&#39;</span><span class="p">,</span>
+                   <span class="n">distance_metric</span><span class="o">=</span><span class="s1">&#39;euclidean&#39;</span><span class="p">)</span>
+<span class="k">with</span> <span class="n">plt</span><span class="o">.</span><span class="n">style</span><span class="o">.</span><span class="n">context</span><span class="p">(</span><span class="s1">&#39;style/thinner.mplstyle&#39;</span><span class="p">):</span>
+    <span class="n">plot_bicluster</span><span class="p">(</span><span class="n">counts_var</span><span class="p">,</span> <span class="n">yr</span><span class="p">,</span> <span class="n">yc</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch2_26_0.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="This heatmap shows the level of gene expression across all samples and genes. The color indicates the expression level. The rows and columns are grouped by our clusters. We can see our gene clusters along the y-axis and sample clusters across the top of the x-axis." -->
+
+<h2 id="Predicting-Survival">Predicting Survival<a class="anchor-link" href="#Predicting-Survival"> </a></h2><p>We can see that the sample data naturally falls into at least two clusters, maybe three.
+Are these clusters meaningful?
+To answer this, we can access the patient data, available from the <a href="https://tcga-data.nci.nih.gov/docs/publications/skcm_2015/">data repository</a> for the paper.
+After some preprocessing, we get the <a href="https://github.com/elegant-scipy/elegant-scipy/blob/master/data/patients.csv">patients table</a>, which contains survival information for each patient.
+We can then match these to the counts clusters, and understand whether the patients' gene expression can predict differences in their pathology.</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">patients</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_csv</span><span class="p">(</span><span class="s1">&#39;data/patients.csv&#39;</span><span class="p">,</span> <span class="n">index_col</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">patients</span><span class="o">.</span><span class="n">head</span><span class="p">()</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+<div class="output_html rendered_html output_subarea output_execute_result">
+<div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>UV-signature</th>
+      <th>original-clusters</th>
+      <th>melanoma-survival-time</th>
+      <th>melanoma-dead</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>TCGA-BF-A1PU</td>
+      <td>UV signature</td>
+      <td>keratin</td>
+      <td>NaN</td>
+      <td>NaN</td>
+    </tr>
+    <tr>
+      <td>TCGA-BF-A1PV</td>
+      <td>UV signature</td>
+      <td>keratin</td>
+      <td>13.0</td>
+      <td>0.0</td>
+    </tr>
+    <tr>
+      <td>TCGA-BF-A1PX</td>
+      <td>UV signature</td>
+      <td>keratin</td>
+      <td>NaN</td>
+      <td>NaN</td>
+    </tr>
+    <tr>
+      <td>TCGA-BF-A1PZ</td>
+      <td>UV signature</td>
+      <td>keratin</td>
+      <td>NaN</td>
+      <td>NaN</td>
+    </tr>
+    <tr>
+      <td>TCGA-BF-A1Q0</td>
+      <td>not UV</td>
+      <td>immune</td>
+      <td>17.0</td>
+      <td>0.0</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>For each patient (the rows) we have:</p>
+<ul>
+<li>UV­ signature: Ultraviolet light tends to cause specific DNA mutations.
+By looking for this mutation signature researchers can infer whether UV light likely caused the mutation(s) that led to cancer in these patients.</li>
+<li>original­ clusters: In the paper, the patients were clustered using gene expression data.
+These clusters were classified according to the types of genes that typified that cluster.
+The main clusters were "immune" (n = 168; 51%), "keratin" (n = 102; 31%), and "MITF-low" (n = 59; 18%).</li>
+<li>melanoma­ survival­ time: Number of days that the patient survived.</li>
+<li>melanoma­ dead: 1 if the patient died of melanoma, 0 if they are alive or died of something else.</li>
+</ul>
+<p>Now we need to draw <em>survival curves</em> for each group of patients defined by the clustering.
+This is a plot of the fraction of a population that remains alive over a period of time.
+Note that some data is <em>right-censored</em>, which means that in some cases, we don't actually know when the patient died, or the patient might have died of causes unrelated to the melanoma.
+We count these patients as "alive" for the duration of the survival curve, but more sophisticated analyses might try to estimate their likely time of death.</p>
+<p>To obtain a survival curve from survival times, we create a step function that decreases by $1/n$ at each step, where $n$ is the number of patients in the group.
+We then match that function against the noncensored survival times.</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="k">def</span> <span class="nf">survival_distribution_function</span><span class="p">(</span><span class="n">lifetimes</span><span class="p">,</span> <span class="n">right_censored</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Return the survival distribution function of a set of lifetimes.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    lifetimes : array of float or int</span>
+<span class="sd">        The observed lifetimes of a population. These must be non-</span>
+<span class="sd">        -negative.</span>
+<span class="sd">    right_censored : array of bool, same shape as `lifetimes`</span>
+<span class="sd">        A value of `True` here indicates that this lifetime was not observed.</span>
+<span class="sd">        Values of `np.nan` in `lifetimes` are also considered to be</span>
+<span class="sd">        right-censored.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    sorted_lifetimes : array of float</span>
+<span class="sd">        The</span>
+<span class="sd">    sdf : array of float</span>
+<span class="sd">        Values starting at 1 and progressively decreasing, one level</span>
+<span class="sd">        for each observation in `lifetimes`.</span>
+
+<span class="sd">    Examples</span>
+<span class="sd">    --------</span>
+
+<span class="sd">    In this example, of a population of four, two die at time 1, a</span>
+<span class="sd">    third dies at time 2, and a final individual dies at an unknown</span>
+<span class="sd">    time. (Hence, ``np.nan``.)</span>
+
+<span class="sd">    &gt;&gt;&gt; lifetimes = np.array([2, 1, 1, np.nan])</span>
+<span class="sd">    &gt;&gt;&gt; survival_distribution_function(lifetimes)</span>
+<span class="sd">    (array([ 0.,  1.,  1.,  2.]), array([ 1.  ,  0.75,  0.5 ,  0.25]))</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">n_obs</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">lifetimes</span><span class="p">)</span>
+    <span class="n">rc</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">isnan</span><span class="p">(</span><span class="n">lifetimes</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">right_censored</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">rc</span> <span class="o">|=</span> <span class="n">right_censored</span>
+    <span class="n">observed</span> <span class="o">=</span> <span class="n">lifetimes</span><span class="p">[</span><span class="o">~</span><span class="n">rc</span><span class="p">]</span>
+    <span class="n">xs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span> <span class="p">([</span><span class="mi">0</span><span class="p">],</span> <span class="n">np</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">observed</span><span class="p">))</span> <span class="p">)</span>
+    <span class="n">ys</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">n_obs</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="n">ys</span> <span class="o">=</span> <span class="n">ys</span><span class="p">[:</span><span class="nb">len</span><span class="p">(</span><span class="n">xs</span><span class="p">)]</span>
+    <span class="k">return</span> <span class="n">xs</span><span class="p">,</span> <span class="n">ys</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Now that we can easily obtain survival curves from the survival data, we can plot them.
+We write a function that groups the survival times by cluster identity and plots each group as a different line:</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="k">def</span> <span class="nf">plot_cluster_survival_curves</span><span class="p">(</span><span class="n">clusters</span><span class="p">,</span> <span class="n">sample_names</span><span class="p">,</span> <span class="n">patients</span><span class="p">,</span>
+                                 <span class="n">censor</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Plot the survival data from a set of sample clusters.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    clusters : array of int or categorical pd.Series</span>
+<span class="sd">        The cluster identity of each sample, encoded as a simple int</span>
+<span class="sd">        or as a pandas categorical variable.</span>
+<span class="sd">    sample_names : list of string</span>
+<span class="sd">        The name corresponding to each sample. Must be the same length</span>
+<span class="sd">        as `clusters`.</span>
+<span class="sd">    patients : pandas.DataFrame</span>
+<span class="sd">        The DataFrame containing survival information for each patient.</span>
+<span class="sd">        The indices of this DataFrame must correspond to the</span>
+<span class="sd">        `sample_names`. Samples not represented in this list will be</span>
+<span class="sd">        ignored.</span>
+<span class="sd">    censor : bool, optional</span>
+<span class="sd">        If `True`, use `patients[&#39;melanoma-dead&#39;]` to right-censor the</span>
+<span class="sd">        survival data.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">()</span>
+    <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">clusters</span><span class="p">)</span> <span class="o">==</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+        <span class="n">cluster_ids</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">unique</span><span class="p">(</span><span class="n">clusters</span><span class="p">)</span>
+        <span class="n">cluster_names</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;cluster </span><span class="si">{}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">cluster_ids</span><span class="p">]</span>
+    <span class="k">elif</span> <span class="nb">type</span><span class="p">(</span><span class="n">clusters</span><span class="p">)</span> <span class="o">==</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
+        <span class="n">cluster_ids</span> <span class="o">=</span> <span class="n">clusters</span><span class="o">.</span><span class="n">cat</span><span class="o">.</span><span class="n">categories</span>
+        <span class="n">cluster_names</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">cluster_ids</span><span class="p">)</span>
+    <span class="n">n_clusters</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">cluster_ids</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">cluster_ids</span><span class="p">:</span>
+        <span class="n">clust_samples</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">flatnonzero</span><span class="p">(</span><span class="n">clusters</span> <span class="o">==</span> <span class="n">c</span><span class="p">)</span>
+        <span class="c1"># discard patients not present in survival data</span>
+        <span class="n">clust_samples</span> <span class="o">=</span> <span class="p">[</span><span class="n">sample_names</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">clust_samples</span>
+                         <span class="k">if</span> <span class="n">sample_names</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="ow">in</span> <span class="n">patients</span><span class="o">.</span><span class="n">index</span><span class="p">]</span>
+        <span class="n">patient_cluster</span> <span class="o">=</span> <span class="n">patients</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">clust_samples</span><span class="p">]</span>
+        <span class="n">survival_times</span> <span class="o">=</span> <span class="n">patient_cluster</span><span class="p">[</span><span class="s1">&#39;melanoma-survival-time&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span>
+        <span class="k">if</span> <span class="n">censor</span><span class="p">:</span>
+            <span class="n">censored</span> <span class="o">=</span> <span class="o">~</span><span class="n">patient_cluster</span><span class="p">[</span><span class="s1">&#39;melanoma-dead&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">bool</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">censored</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">stimes</span><span class="p">,</span> <span class="n">sfracs</span> <span class="o">=</span> <span class="n">survival_distribution_function</span><span class="p">(</span><span class="n">survival_times</span><span class="p">,</span>
+                                                        <span class="n">censored</span><span class="p">)</span>
+        <span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">stimes</span> <span class="o">/</span> <span class="mi">365</span><span class="p">,</span> <span class="n">sfracs</span><span class="p">)</span>
+
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s1">&#39;survival time (years)&#39;</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s1">&#39;fraction alive&#39;</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">legend</span><span class="p">(</span><span class="n">cluster_names</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Now we can use the <code>fcluster</code> function to obtain cluster identities for the samples (columns of the counts data), and plot each survival curve separately.
+The <code>fcluster</code> function takes a linkage matrix, as returned by <code>linkage</code>, and a threshold, and returns cluster identities.
+It's difficult to know a-priori what the threshold should be, but we can obtain the appropriate threshold for a fixed number of clusters by checking the distances in the linkage matrix.</p>
+
+</div>
+</div>
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">from</span> <span class="nn">scipy.cluster.hierarchy</span> <span class="k">import</span> <span class="n">fcluster</span>
+<span class="n">n_clusters</span> <span class="o">=</span> <span class="mi">3</span>
+<span class="n">threshold_distance</span> <span class="o">=</span> <span class="p">(</span><span class="n">yc</span><span class="p">[</span><span class="o">-</span><span class="n">n_clusters</span><span class="p">,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">+</span> <span class="n">yc</span><span class="p">[</span><span class="o">-</span><span class="n">n_clusters</span><span class="o">+</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">])</span> <span class="o">/</span> <span class="mi">2</span>
+<span class="n">clusters</span> <span class="o">=</span> <span class="n">fcluster</span><span class="p">(</span><span class="n">yc</span><span class="p">,</span> <span class="n">threshold_distance</span><span class="p">,</span> <span class="s1">&#39;distance&#39;</span><span class="p">)</span>
+
+<span class="n">plot_cluster_survival_curves</span><span class="p">(</span><span class="n">clusters</span><span class="p">,</span> <span class="n">data_table</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">patients</span><span class="p">)</span>
+</pre></div>
+
+    </div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+<div class="jb_output_wrapper }}">
+<div class="output_area">
+
+
+
+<div class="output_png output_subarea ">
+<img src="images/ch2_34_0.png"
+>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div class="jb_cell">
+
+<div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<!-- caption text="Survival curves for patients clustered using gene expression data" -->
+
+<p>The clustering of gene expression profiles appears to have identified a
+higher-risk subtype of melanoma (cluster 2).
+The TCGA study backs this claim up with a more robust clustering and
+statistical testing. This is indeed only the latest study to show such a
+result, with others identifying subtypes of leukemia (blood cancer), gut
+cancer, and more. Although the above clustering technique is quite fragile,
+there are other, more robust ways to explore this and similar datasets <sup class="footnote-ref" id="fnref-paper"><a href="#fn-paper">1</a></sup>.</p>
+<!-- exercise begin -->
+
+<h2 id="Further-Work:-Using-the-TCGA's-Patient-Clusters">Further Work: Using the TCGA's Patient Clusters<a class="anchor-link" href="#Further-Work:-Using-the-TCGA's-Patient-Clusters"> </a></h2><p>Do our clusters do a better job of predicting survival than the original clusters in the paper? What about UV signature?
+Plot survival curves using the original clusters and UV signature columns of the patient data. How do they compare to our clusters?</p>
+<!-- exercise end -->
+
+<!-- exercise begin -->
+
+<h2 id="Further-Work:-Reproducing-the-TCGA's-Clusters">Further Work: Reproducing the TCGA's Clusters<a class="anchor-link" href="#Further-Work:-Reproducing-the-TCGA's-Clusters"> </a></h2><p>We leave you the exercise of implementing the approach described in the paper[^paper]:</p>
+<ol>
+<li>Take bootstrap samples (random choice with replacement) of the genes used to cluster the samples;</li>
+<li>For each sample, produce a hierarchical clustering;</li>
+<li>In a <code>(n_samples, n_samples)</code>-shaped matrix, store the number of times a sample pair appears together in a bootstrapped clustering.</li>
+<li>Perform a hierarchical clustering on the resulting matrix.</li>
+</ol>
+<p>This identifies groups of samples that frequently occur together in clusterings, regardless of the genes chosen.
+Thus, these samples can be considered to robustly cluster together.</p>
+<p><em>Hint: use <code>np.random.choice</code> with <code>replacement=True</code> to create bootstrap samples of row indices.</em></p>
+<!-- exercise end -->
+
+<div class="footnotes">
+<hr>
+<ol><li id="fn-paper"><p>The Cancer Genome Atlas Network. (2015) Genomic Classification of
+Cutaneous Melanoma. Cell 161:1681-1696.
+<a href="http://dx.doi.org/10.1016/j.cell.2015.05.044">http://dx.doi.org/10.1016/j.cell.2015.05.044</a><a href="#fnref-paper" class="footnote">&#8617;</a></p></li>
+</ol>
+</div>
+
+</div>
+</div>
+</div>
+</div>
+
+ 
+
+
+    </main>
+    
